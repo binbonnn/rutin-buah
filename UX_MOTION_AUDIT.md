@@ -600,7 +600,7 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 | Drawer 390px | `body.sidebar-open`, sidebar `x=13`, `aria-expanded=true` |
 | Modal / checklist / bento / tema | berfungsi, 0 console error |
 | Lighthouse light & dark | Accessibility **1.00**, Best Practices **1.00**, SEO **1.00**, **0 failures** |
-| Service worker | cache `rutin-buah-v22` |
+| Service worker | cache `rutin-buah-v23` |
 
 > Catatan: sisa `scrollWidth > clientWidth` pada elemen dengan `text-overflow: ellipsis` atau pseudo-element area tap adalah _clip behavior_ yang disengaja; tidak menghasilkan scroll horizontal dokumen.
 
@@ -625,3 +625,19 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 | Kompatibilitas | Semua `data-action`, `data-nav`, `data-goto`, dan state tersimpan tidak berubah. 6 ikon morph + 6 UX laws tetap aktif. |
 
 **Verifikasi setelah restyle:** 6 halaman tanpa console error & tanpa overflow horizontal; Lighthouse Accessibility / Best Practices / SEO **1.00** (light); interaksi check, bento task, modal buah, search, lock anggaran, drawer, dan theme toggle terverifikasi.
+
+---
+
+# LAMPIRAN 3 — Perbaikan Drawer "Blur & Tidak Bisa Ditekan"
+
+**Gejala.** Menekan hamburger (`#menu-toggle`) membuat seluruh layar blur dan semua tap berikutnya tidak bereaksi pada menu.
+
+**Akar masalah (terukur).** `.mobile-backdrop` dulunya adalah sibling `body` dengan `z-index:70`, sementara `.sidebar` berada di dalam `.app-shell` yang membentuk stacking context sendiri (`position:relative; z-index:10; backdrop-filter:blur(28px)`). Akibatnya backdrop root dilukis **di atas seluruh slab**, termasuk sidebar. Uji `document.elementFromPoint()` pada tombol Tutup dan item nav mengembalikan `mobile-backdrop`, bukan elemen sidebar — jadi blur menutupi menu dan setiap tap kena scrim.
+
+**Perbaikan.**
+- `#mobile-backdrop` dipindahkan ke dalam `.app-shell`, tepat sebelum `.sidebar`, sehingga keduanya berbagi stacking context yang sama.
+- Backdrop memakai `position:absolute; inset:0; border-radius:inherit; z-index:70`, sidebar tetap `z-index:80` → scrim melukis di bawah sidebar (konten utama blur, menu tetap tajam dan bisa ditekan).
+- Ditambahkan `pointer-events:none` saat tertutup dan `pointer-events:auto` saat `body.sidebar-open`, plus fallback klik di luar sidebar/Escape untuk menutup.
+- `CACHE` service worker dinaikkan ke `rutin-buah-v23` agar perbaikan tidak tertahan cache-first.
+
+**Verifikasi.** Lebar 360px & 800px (terang dan gelap): `closeHit=path` (bukan backdrop), `body.sidebar-open` aktif, `aria-expanded=true`, tombol Tutup / item nav / backdrop / Escape semuanya menutup drawer, `overflow` tubuh pulih, `scrollWidth - clientWidth = 0`, 0 console error.
