@@ -16,7 +16,7 @@
 ## A1. Ringkasan Eksekutif
 
 1. Perubahan terbesar ada di **Jadwal Mingguan**: strip hari yang semula memaksa 7 hari muat dalam satu layar kini menjadi carousel dengan **peek 30%** + fade, sehingga affordance geser terlihat tanpa instruksi.
-2. **Modal** naikkan scrim dari 58% → **68%** dan scroll belakang dikunci; fokus terkunci oleh `<dialog>` native sehingga tidak ada klik liar ke halaman di belakang.
+2. **Modal** naikkan scrim dari 58% → **62%** (masuk rentang 60–70%) dan scroll belakang dikunci; fokus terkunci oleh `<dialog>` native sehingga tidak ada klik liar ke halaman di belakang.
 3. **Pesan anggaran** tidak lagi bergaya banner iklan; kini kalimat tenang inline di dalam kartu anggaran, dekat tombol "Atur anggaran".
 4. **Form** dipangkas drastis lewat `<datalist>` saran aktivitas dan autofill buah (label, stok, satuan, jumlah, harga, sesi terisi otomatis saat jenis buah dipilih).
 5. **Belanja** kini satu stepper 4 langkah yang disatukan satu garis kontinu, bukan 4 kartu lepas.
@@ -552,10 +552,29 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 | Console error (6 halaman) | 0 |
 | Horizontal overflow (6 halaman, 800px) | 0 |
 | Closure peek (strip 487px) | 30% (32px / 106px) |
-| Service worker cache aktif | `rutin-buah-v16` |
+| Service worker cache aktif | `rutin-buah-v18` |
 | Data awal | 177 aktivitas, 7 target skripsi, 7 tugas, 5 buah, tema terang, kunci anggaran nonaktif |
 | Pencarian aktivitas | "skripsi" → 21/177 tampil; tutup → 177, query kosong |
 | Send / Download / Lock / Theme / Search / Check | Semua state & transisi terverifikasi di browser |
 
 **Cara menjalankan:** `node scripts\serve.js` lalu buka `http://localhost:8080`.
 **Catatan SW:** setiap perubahan `index.html` / `css` / `js` / `manifest` wajib menaikkan `CACHE` di `sw.js` agar tidak tertahan cache-first.
+
+---
+
+# LAMPIRAN 2 — Restyle «Liquid Glass Studio»
+
+| Aspek | Detail |
+|---|---|
+| Referensi visual | `rutin_buah_glassmorphism_planner.html` — studio light, slab putih bevel, bento pastel, pill coral, Plus Jakarta Sans. |
+| Token inti | `--studio-bg-top #cbd2dc` → `--studio-bg-bottom #a6b0be`; tinta `#181c24 / #4e5868 / #697486`; coral `#f68a73 → #eb725c`. |
+| Slab | `max-width 1320px`, `border-radius 32px` (desktop), border putih 1.5px, `backdrop-filter blur(28px) saturate(145%)`, inner rim + specular glint, cast shadow `-22px 28px 60px rgba(34,42,56,.24)`. |
+| Latar | `.bg-mesh` + `.studio-sunlight` (via `::before`) + 3 `.studio-bloom` (`#c4c0f5`, `#bce3cf`, `#f6c6b3`, blur 75px). |
+| Navigasi | Sidebar kiri 256px di desktop; drawer geser + backdrop di mobile. Pill aktif coral dengan badge ikon & anak panah `→`. |
+| Beranda | Hero lavender, 3 bento tile (lavender/mint/peach), action bar kristal, kartu ring multi-segment 4 busur, timeline "Berikutnya". |
+| Font | Plus Jakarta Sans 400–800 via Google Fonts, fallback Inter/system-ui. |
+| Tema | Terang adalah default (sesuai referensi); gelap tetap tersedia dengan geometri & token yang sama. |
+| Ikon PWA | Emblem multi-petal (coral/amber/violet/mint) di slab frosted, dihasilkan ulang oleh `scripts\generate-icons.js` (192/512 + maskable). |
+| Kompatibilitas | Semua `data-action`, `data-nav`, `data-goto`, dan state tersimpan tidak berubah. 6 ikon morph + 6 UX laws tetap aktif. |
+
+**Verifikasi setelah restyle:** 6 halaman tanpa console error & tanpa overflow horizontal; Lighthouse Accessibility / Best Practices / SEO **1.00** (light); interaksi check, bento task, modal buah, search, lock anggaran, drawer, dan theme toggle terverifikasi.

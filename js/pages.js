@@ -29,6 +29,9 @@ const Pages = (() => {
     const remState = Store.reminderFor(reminder.session);
     const taskStats = Store.taskStats();
     const todayTarget = Store.targetForDay(day);
+    const topTasks = Store.state.tasks.slice(0, 3);
+    const timeline = statuses.filter((s) => s.status === 'ongoing' || s.status === 'upcoming').slice(0, 3);
+    const timelineItems = timeline.length ? timeline : statuses.slice(0, 3);
 
     const nextHtml = next
       ? `<div class="next-top">${UI.chip(next.status === 'ongoing' ? 'Sedang berlangsung' : 'Berikutnya', next.status === 'ongoing' ? 'run' : 'primary')}<span class="next-time">${esc(Utils.fmtTime(next.a.startTime))}</span></div>
@@ -46,40 +49,131 @@ const Pages = (() => {
         ${UI.badge(status)}
       </li>`).join('') : UI.empty('calendar', 'Belum ada aktivitas', 'Tambahkan aktivitas untuk hari ini.');
 
+    const bentoTasks = topTasks.length ? topTasks.map((t) => {
+      const isDone = t.status === 'completed';
+      return `<button class="bento-check ${isDone ? 'is-done' : ''}" type="button" data-action="toggle-task" data-id="${esc(t.id)}"
+        aria-label="Tandai tugas ${esc(t.title)} ${isDone ? 'belum selesai' : 'selesai'}" aria-pressed="${isDone}">
+        ${UI.checkIcon(isDone)}<span>${esc(t.title)}</span></button>`;
+    }).join('') : '<p class="hint">Belum ada tugas skripsi.</p>';
+
+    const ringColors = ['#a78bfa', '#f68a73', '#6ee7b7', '#7dd3fc'];
+    const ringOffsets = ['0', '-106.81', '-213.63', '-320.44'];
+    const ringSegments = ringColors.map((color, i) => {
+      const opacity = daily.pct >= (i + 1) * 25 ? .95 : (daily.pct > i * 25 ? .62 : .28);
+      return `<circle class="ring-segment" cx="90" cy="90" r="68" fill="none" stroke="${color}" stroke-width="18"
+        stroke-linecap="round" stroke-dasharray="96 427.26" stroke-dashoffset="${ringOffsets[i]}" opacity="${opacity}"></circle>`;
+    }).join('');
+
+    const timelineRows = timelineItems.map((s, i) => {
+      const tone = s.status === 'ongoing' ? 'coral' : i % 2 ? 'violet' : 'mint';
+      return `<div class="timeline-row">
+        <span class="tl-left"><span class="tl-mark ${tone}" aria-hidden="true">${i + 1}</span>
+          <strong>${esc(Utils.fmtTime(s.a.startTime))} · ${esc(s.a.title)}</strong></span>
+        <small>${s.status === 'ongoing' ? 'Aktif' : esc(Utils.dayName(Utils.dow(now), true))}</small>
+      </div>`;
+    }).join('') || '<p class="hint">Belum ada jadwal mendatang.</p>';
+
     return `
       <div class="stack">
-        <section class="hero-card">
+        <section class="hero-card tile-hero-lavender">
           <div class="hero-glow" aria-hidden="true"></div>
           <div class="hero-content">
             <span class="hero-eyebrow">${esc(Utils.formatDate(now))}</span>
             <h2>${greeting()}${S().settings.name ? ', ' + esc(S().settings.name) : ''}</h2>
             <p class="hero-sub">Fokus hari ini: ${esc(todayTarget || 'Jalankan rutinitas dengan konsisten.')}</p>
-            <div class="hero-next">${nextHtml}</div>
+            <div class="bento-pill-row">
+              <span class="pct-pill">${done}/${daily.total} aktivitas hari ini</span>
+              <span class="pct-pill">${Store.servingsForWeek()}/${Store.weeklyTarget()} buah pekan ini</span>
+            </div>
           </div>
-          <div class="hero-side">
-            ${UI.ring(daily.pct, 'Hari ini', `${done}/${daily.total} aktivitas`)}
+          <div class="hero-side" style="flex:0 0 235px">
+            <div class="crystal-panel" style="border-radius:18px;padding:14px;width:100%">${nextHtml}</div>
           </div>
         </section>
 
-        <div class="grid-2">
-          <section class="card">
-            ${UI.section('Progres minggu ini', 'Hari Senin sampai hari ini')}
-            <div class="progress-row"><strong>${weekly.done}</strong><span>/ ${weekly.total} aktivitas</span><b>${weekly.pct}%</b></div>
-            ${UI.bar(weekly.pct, 'primary', 'Progres aktivitas minggu ini')}
-            <div class="mini-stats">
-              <div><span>Tugas skripsi</span><strong>${taskStats.done}/${taskStats.total}</strong></div>
-              <div><span>Buah pekan ini</span><strong>${Store.servingsForWeek()}/${Store.weeklyTarget()}</strong></div>
-            </div>
-          </section>
+        <div class="dashboard-grid">
+          <div class="dashboard-main">
+            <div class="bento-row">
+              <section class="card tile-lavender bento-tile">
+                <div class="bento-top">
+                  <span class="sculpt-icon sculpt-violet" aria-hidden="true">${ic('target', 20)}</span>
+                  <span class="pct-pill">${weekly.pct}%</span>
+                </div>
+                <h3>Progres Minggu Ini</h3>
+                <p>Hari Senin sampai hari ini</p>
+                <div class="bento-body">
+                  <div class="bento-count"><strong>${weekly.done}</strong><span> / ${weekly.total} aktivitas</span></div>
+                  ${UI.bar(weekly.pct, 'primary', 'Progres aktivitas minggu ini')}
+                  <div class="bento-pill-row">
+                    <button class="mini-pill" type="button" data-action="add-activity" data-day="${day}">+ Tambah aktivitas</button>
+                    <a class="mini-pill square" href="#/jadwal" aria-label="Lihat jadwal mingguan">→</a>
+                  </div>
+                </div>
+              </section>
 
-          <section class="card fruit-card">
-            ${UI.section('Konsumsi buah hari ini', `Target ${target} porsi per hari`)}
-            <div class="fruit-count"><strong>${servings}</strong><span>/ ${target} porsi</span></div>
-            <div class="fruit-dots" role="img" aria-label="${servings} dari ${target} porsi">
-              ${Array.from({ length: target }, (_, i) => `<span class="fruit-dot ${i < servings ? 'is-filled' : ''}">${ic('fruit', 18)}</span>`).join('')}
+              <section class="card tile-mint bento-tile">
+                <div class="bento-top">
+                  <span class="sculpt-icon sculpt-mint" aria-hidden="true">${ic('fruit', 20)}</span>
+                  <span class="pct-pill">${Math.round((servings / Math.max(1, target)) * 100)}%</span>
+                </div>
+                <h3>Konsumsi Buah Hari Ini</h3>
+                <p>Target ${target} porsi per hari</p>
+                <div class="bento-body">
+                  <div class="bento-count"><strong>${servings}</strong><span> / ${target} porsi</span><em>${servings >= target ? 'Target tercapai' : 'Belum ada'}</em></div>
+                  <div class="bento-pill-row">
+                    <button class="mini-pill" type="button" data-action="open-consume">+ Porsi 1</button>
+                    <button class="mini-pill" type="button" data-action="open-consume">+ Porsi 2</button>
+                    <a class="mini-pill square" href="#/buah" aria-label="Lihat catatan buah">→</a>
+                  </div>
+                </div>
+              </section>
+
+              <section class="card tile-peach bento-tile">
+                <div class="bento-top">
+                  <span class="sculpt-icon sculpt-coral" aria-hidden="true">${ic('book', 20)}</span>
+                  <span class="pct-pill">${taskStats.done}/${taskStats.total}</span>
+                </div>
+                <h3>Skripsi &amp; Presentasi</h3>
+                <p>3 tugas terdekat</p>
+                <div class="bento-checklist">${bentoTasks}</div>
+              </section>
             </div>
-            <button class="btn btn-soft btn-block" type="button" data-action="open-consume">${ic('plus', 18)} Catat konsumsi buah</button>
-          </section>
+
+            <div class="card crystal-panel action-bar">
+              <div class="action-icons">
+                <a class="btn-icon" href="#/jadwal" title="Buka Jadwal" aria-label="Buka Jadwal">${ic('clock', 17)}</a>
+                <a class="btn-icon" href="#/buah" title="Catatan Buah" aria-label="Buka catatan buah">${ic('fruit', 17)}</a>
+                <button class="btn-icon" type="button" data-action="open-stock" title="Tambah stok" aria-label="Tambah stok">${ic('box', 17)}</button>
+                <span class="action-label">Centang tugas atau catat buah untuk memperbarui cincin progres.</span>
+              </div>
+              <a class="btn btn-primary btn-sm" href="#/jadwal">Atur Jadwal</a>
+            </div>
+          </div>
+
+          <div class="dashboard-side">
+            <section class="card">
+              <div class="ring-multi" role="img" aria-label="${daily.pct}% target harian, ${done} dari ${daily.total} aktivitas">
+                <svg viewBox="0 0 180 180" aria-hidden="true">
+                  <circle cx="90" cy="90" r="68" fill="rgba(255,255,255,.36)" stroke="rgba(255,255,255,.72)" stroke-width="18"></circle>
+                  ${ringSegments}
+                </svg>
+                <div class="ring-disc"><strong>${daily.pct}%</strong><span>Target Harian</span></div>
+              </div>
+              <p class="hint" style="text-align:center;margin-top:14px;font-weight:700;color:var(--ink-primary)">Hari ini · ${done}/${daily.total} aktivitas</p>
+            </section>
+
+            <section class="card" style="flex:1">
+              <div class="section-head" style="margin-bottom:12px">
+                <div class="flex items-center gap-2" style="display:flex;align-items:center;gap:8px">
+                  <span style="width:22px;height:22px;border-radius:8px;background:linear-gradient(145deg,#fca58e,#eb725c);color:#fff;display:grid;place-items:center;font-size:.62rem;font-weight:800">1</span>
+                  <h2>Berikutnya</h2>
+                </div>
+                <span style="font-size:.68rem;font-weight:700;color:var(--ink-secondary)">${esc(Utils.dayName(day, true))}, ${esc(Utils.formatDate(now, { short: true }))}</span>
+              </div>
+              <div class="timeline-list">${timelineRows}</div>
+              <a class="btn mini-pill timeline-foot" href="#/jadwal"><span>Lihat Semua Jadwal</span><span aria-hidden="true">⌄</span></a>
+            </section>
+          </div>
         </div>
 
         <section class="card">

@@ -45,6 +45,10 @@
 
     const weekly = Store.weekProgress();
     document.getElementById('sidebar-progress').textContent = weekly.pct + '%';
+    const orb = document.getElementById('sidebar-progress-orb');
+    if (orb) orb.textContent = weekly.pct + '%';
+    const progressLabel = document.getElementById('sidebar-progress-label');
+    if (progressLabel) progressLabel.textContent = weekly.pct + '% pekan ini';
 
     if (shouldRestore) {
       const id = prevFocus.dataset.id;
@@ -70,7 +74,24 @@
   function renderNav() {
     const nav = document.getElementById('nav');
     nav.innerHTML = NAV.map((n) => `<button class="nav-item" type="button" data-nav="${n.key}">
-      ${Utils.icon(n.icon, 21)}<span>${n.label}</span></button>`).join('');
+      <span><span class="nav-icon-badge" aria-hidden="true">${Utils.icon(n.icon, 15)}</span><span>${n.label}</span></span>
+      <span class="nav-arrow" aria-hidden="true">→</span></button>`).join('');
+  }
+
+  function setSidebar(open) {
+    document.body.classList.toggle('sidebar-open', open);
+    const toggle = document.getElementById('menu-toggle');
+    if (toggle) toggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function initDrawer() {
+    const open = document.getElementById('menu-toggle');
+    const close = document.getElementById('menu-close');
+    const backdrop = document.getElementById('mobile-backdrop');
+    if (open) open.addEventListener('click', () => setSidebar(true));
+    if (close) close.addEventListener('click', () => setSidebar(false));
+    if (backdrop) backdrop.addEventListener('click', () => setSidebar(false));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSidebar(false); });
   }
 
   function setSaveIndicator(text, isError = false) {
@@ -92,7 +113,7 @@
 
   function initTopbarButtons() {
     const fruitBtn = document.getElementById('quick-fruit');
-    fruitBtn.innerHTML = Utils.icon('fruit', 17) + '<span>Catat buah</span>';
+    fruitBtn.innerHTML = Utils.icon('fruit', 17) + '<span>Catat buah</span><span class="fruit-badge">+1 porsi</span>';
     fruitBtn.addEventListener('click', () => Pages.openConsumeModal());
 
     const installBtn = document.getElementById('install-btn');
@@ -120,7 +141,14 @@
     document.addEventListener('click', (e) => {
       const nav = e.target.closest('[data-nav]');
       if (nav) {
+        setSidebar(false);
         location.hash = '#/' + nav.dataset.nav;
+        return;
+      }
+      const goto = e.target.closest('[data-goto]');
+      if (goto) {
+        setSidebar(false);
+        location.hash = '#/' + goto.dataset.goto;
         return;
       }
       const el = e.target.closest('[data-action]');
@@ -206,6 +234,10 @@
         // Jangan timpa input yang belum disimpan; cukup sinkronkan status global.
         const weekly = Store.weekProgress();
         document.getElementById('sidebar-progress').textContent = weekly.pct + '%';
+        const orb = document.getElementById('sidebar-progress-orb');
+        if (orb) orb.textContent = weekly.pct + '%';
+        const progressLabel = document.getElementById('sidebar-progress-label');
+        if (progressLabel) progressLabel.textContent = weekly.pct + '% pekan ini';
       }
     });
     document.addEventListener('app:force-render', () => render());
@@ -295,6 +327,7 @@
   function init() {
     UI.initModal();
     renderNav();
+    initDrawer();
     document.documentElement.dataset.theme = Store.state.settings.theme === 'dark' ? 'dark' : 'light';
     initTheme();
     initTopbarButtons();
