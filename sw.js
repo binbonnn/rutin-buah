@@ -1,5 +1,5 @@
 /* Service worker — offline-first app shell + cached assets */
-const CACHE = 'rutin-buah-v18';
+const CACHE = 'rutin-buah-v22';
 const SHELL = [
   './',
   './index.html',

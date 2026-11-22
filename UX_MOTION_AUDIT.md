@@ -552,10 +552,57 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 | Console error (6 halaman) | 0 |
 | Horizontal overflow (6 halaman, 800px) | 0 |
 | Closure peek (strip 487px) | 30% (32px / 106px) |
-| Service worker cache aktif | `rutin-buah-v18` |
+| Service worker cache aktif | `rutin-buah-v22` |
 | Data awal | 177 aktivitas, 7 target skripsi, 7 tugas, 5 buah, tema terang, kunci anggaran nonaktif |
 | Pencarian aktivitas | "skripsi" → 21/177 tampil; tutup → 177, query kosong |
 | Send / Download / Lock / Theme / Search / Check | Semua state & transisi terverifikasi di browser |
+
+---
+
+# LAMPIRAN L — Audit Tata Letak Pasca-Liquid Glass
+
+**Pemicu:** user melaporkan layout "berantakan" setelah restyle glassmorphism.
+**Metode:** audit geometri DOM di iframe viewport 360–1440px (screenshot tidak tersedia di sesi ini), 6 halaman × lebar × tema, plus Lighthouse.
+
+## L1. Temuan utama (root cause)
+
+| # | Temuan terukur | Dampak UX | Perbaikan |
+|---|---|---|---|
+| 1 | `.app-shell` tetap `flex-direction: column` pada ≥1024px; sidebar statis menumpuk **di atas** main (sidebar `y=29`, main `y=548`, tinggi sidebar ~520px). | Navigasi memakan satu layar penuh sebelum konten; hierarki dan figure-ground rusak — ini penyebab utama kesan berantakan. | Sidebar diubah ke rail samping hanya di `@media (min-width:1024px)` dengan `.app-shell { flex-direction: row; align-items: stretch }`. Di bawah 1024px tetap drawer. |
+| 2 | `.bento-row` 3 kolom mulai 520px; pada 520px tiap tile hanya 144px dan `.bento-pill-row` meluap 139px vs 52px. | Teks dan tombol bertabrakan; target sentuh tidak bisa dipakai. | 1 kolom <700px, 2 kolom 700–1199px, 3 kolom ≥1200px. |
+| 3 | `.dashboard-grid` 2 kolom mulai 800px; pada 800px kolom samping hanya 219px sedangkan ring 176px + padding 36px. | Cincin progres mepet/terpotong. | 2 kolom baru aktif ≥1024px, setelah sidebar menjadi rail. |
+| 4 | Tombol `#quick-fruit` selebar 176,5px di 390px membuat `.topbar-title` tinggal 35,5px; `h1` dan tanggal meluap. | Judul halaman tidak terbaca — kehilangan orientasi (usability). | Label disembunyikan secara visually-hidden <520px (tombol ≈102px), `eyebrow` + `h1` ellipsis/nowrap, font disesuaikan <400px. |
+| 5 | `.week-grid` 7 kolom dengan `.activity-item` satu baris membuat `.activity-info` hanya 9px di 1440px. | Judul aktivitas hilang di desktop. | Item jadwal 7-kolom: checkbox 24px, info fleksibel dengan `min-width:0`, alat edit/hapus pindah ke baris bawah (30px + area tap 44px via pseudo). |
+| 6 | `.app-shell { overflow:hidden }` mengurung sticky topbar. | Header tidak menempel saat scroll. | Diganti `overflow: clip` (klip sudut tetap, sticky kembali bekerja; terukur `topbar.y=0` setelah scroll 900px). |
+| 7 | `.hero-glow` memakai `right:-70px` sehingga `scrollWidth` hero +70px. | False-positive overflow dan ruang tak terpakai. | Digradial dalam batas hero (`inset:0`, radial-gradient). |
+| 8 | Target sentuh kecil: `.check` 28px, `.mini-pill` 34px, `.orb` 38px, `.btn-icon` 42px. | Rawan salah ketuk. | `.check` tetap 28px visual + area tap 44px; `.mini-pill` 44px; `.orb`/`.btn-icon`/`.mobile-theme`/`.week-nav` 44px; `.btn-icon-sm` 36px + area tap 44px. |
+
+## L2. Prinsip UX yang dipakai
+
+- **Visual hierarchy & figure-ground:** rail kiri menjadi landasan navigasi, konten menjadi figure; tidak ada lagi "header" sidebar sebelum judul halaman.
+- **Fitts' law / touch target:** target penting ≥44px tanpa mengubah ukuran visual utama (area tap via pseudo-element/inset).
+- **Progressive disclosure / choice overload:** bento dan ringkasan hanya menambah kolom ketika ruang benar-benar tersedia, bukan berdasarkan lebar layar mentah.
+- **Recognition over recall:** judul halaman selalu terlihat dengan ellipsis terkendali, bukan teks terpotong acak.
+- **Error prevention:** elipsis pada label tugas dan pill mencegah luap teks tanpa menghilangkan akses ke detail.
+- **Sticky orientation:** topbar tetap di atas saat scroll untuk konteks tanggal/halaman.
+
+## L3. Verifikasi setelah perbaikan
+
+| Pemeriksaan | Hasil |
+|---|---|
+| Lebar 360/390/520/700/800/1024/1100/1280/1440 | `document.scrollWidth === clientWidth` (0 overflow halaman) di 6 rute |
+| Sidebar desktop 1280/1440 | `x=33/58`, `right=289/314`, bersebelahan dengan main `x=289/314` |
+| Topbar 390px | tinggi judul 50,3px (dulu 87–103px); tombol buah 102,5px (dulu 176,5px) |
+| Bento 520 / 700 / 1024 / 1280 / 1440 | 1 / 2 / 2 / 3 / 3 kolom, tidak ada tabrakan teks |
+| Dashboard 1440 | bento 212px/tile, side 333px, ring 176px passed |
+| Jadwal 1440 | 7 kolom muat; info aktivitas 73px dengan ellipsis, alat di baris kedua |
+| Sticky topbar | `y=29` sebelum scroll → `y=0` setelah `scrollTop=900` |
+| Drawer 390px | `body.sidebar-open`, sidebar `x=13`, `aria-expanded=true` |
+| Modal / checklist / bento / tema | berfungsi, 0 console error |
+| Lighthouse light & dark | Accessibility **1.00**, Best Practices **1.00**, SEO **1.00**, **0 failures** |
+| Service worker | cache `rutin-buah-v22` |
+
+> Catatan: sisa `scrollWidth > clientWidth` pada elemen dengan `text-overflow: ellipsis` atau pseudo-element area tap adalah _clip behavior_ yang disengaja; tidak menghasilkan scroll horizontal dokumen.
 
 **Cara menjalankan:** `node scripts\serve.js` lalu buka `http://localhost:8080`.
 **Catatan SW:** setiap perubahan `index.html` / `css` / `js` / `manifest` wajib menaikkan `CACHE` di `sw.js` agar tidak tertahan cache-first.

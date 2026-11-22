@@ -113,7 +113,7 @@
 
   function initTopbarButtons() {
     const fruitBtn = document.getElementById('quick-fruit');
-    fruitBtn.innerHTML = Utils.icon('fruit', 17) + '<span>Catat buah</span><span class="fruit-badge">+1 porsi</span>';
+    fruitBtn.innerHTML = Utils.icon('fruit', 17) + '<span class="quick-fruit-label">Catat buah</span><span class="fruit-badge">+1 porsi</span>';
     fruitBtn.addEventListener('click', () => Pages.openConsumeModal());
 
     const installBtn = document.getElementById('install-btn');
