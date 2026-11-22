@@ -1,0 +1,264 @@
+/* ---------- Komponen UI bersama ---------- */
+const UI = (() => {
+  const esc = Utils.escapeHtml;
+  const ic = Utils.icon;
+  let modalState = null;
+  let toastTimer = null;
+  let themeTimer = null;
+
+  function toast(message, type = 'success') {
+    const root = document.getElementById('toast-root');
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + type;
+    const iconName = type === 'error' ? 'alert' : type === 'info' ? 'info' : 'check';
+    el.innerHTML = ic(iconName, 18) + `<span>${esc(message)}</span>`;
+    root.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('is-visible'));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      el.classList.remove('is-visible');
+      setTimeout(() => el.remove(), 250);
+    }, 3200);
+  }
+
+  const dialog = () => document.getElementById('modal');
+
+  function openModal({ title, body = '', submitLabel = 'Simpan', cancelLabel = 'Batal', onSubmit, onOpen, size = '' }) {
+    const d = dialog();
+    modalState = { onSubmit, resolver: null };
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = body;
+    document.getElementById('modal-label').textContent = submitLabel;
+    document.getElementById('modal-submit').classList.remove('is-sending');
+    document.getElementById('modal-submit').disabled = false;
+    document.getElementById('modal-cancel').textContent = cancelLabel;
+    d.className = 'modal' + (size ? ' modal-' + size : '');
+    if (onOpen) onOpen(d);
+    if (!d.open) d.showModal();
+    document.body.classList.add('has-modal');
+    const first = d.querySelector('input:not([type=hidden]), select, textarea');
+    if (first) setTimeout(() => first.focus(), 30);
+  }
+
+  function closeModal() {
+    const d = dialog();
+    if (d.open) d.close();
+    document.body.classList.remove('has-modal');
+  }
+
+  function confirm(title, message, submitLabel = 'Ya, lanjutkan') {
+    return new Promise((resolve) => {
+      openModal({
+        title,
+        submitLabel,
+        body: `<p class="modal-note">${esc(message)}</p>`,
+        onSubmit: () => { resolve(true); return true; }
+      });
+      const d = dialog();
+      modalState.resolver = resolve;
+      const onClose = () => {
+        d.removeEventListener('close', onClose);
+        if (modalState && modalState.resolver) modalState.resolver(false);
+        if (modalState) modalState.resolver = null;
+      };
+      d.addEventListener('close', onClose);
+    });
+  }
+
+  function field(label, name, opts = {}) {
+    const {
+      type = 'text', value = '', options = [], placeholder = '', help = '',
+      required = false, min, max, step, rows = 3, attrs = '', full = false, checked = false,
+      suggestions = []
+    } = opts;
+    const id = 'f-' + name;
+    let control;
+    if (type === 'select') {
+      control = `<select id="${id}" name="${esc(name)}" ${required ? 'required' : ''} ${attrs}>` +
+        options.map((o) => {
+          const val = typeof o === 'object' ? o.value : o;
+          const text = typeof o === 'object' ? o.label : o;
+          return `<option value="${esc(val)}" ${String(val) === String(value) ? 'selected' : ''}>${esc(text)}</option>`;
+        }).join('') + '</select>';
+    } else if (type === 'textarea') {
+      control = `<textarea id="${id}" name="${esc(name)}" rows="${rows}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''} ${attrs}>${esc(value)}</textarea>`;
+    } else if (type === 'checkbox') {
+      control = `<label class="switch"><input type="checkbox" id="${id}" name="${esc(name)}" ${checked ? 'checked' : ''} ${attrs}><span class="switch-track"></span></label>`;
+      return `<div class="field field-check ${full ? 'field-full' : ''}"><div class="field-check-main"><label for="${id}">${esc(label)}</label>${help ? `<small>${esc(help)}</small>` : ''}</div>${control}</div>`;
+    } else {
+      control = `<input id="${id}" name="${esc(name)}" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''} ${min !== undefined ? `min="${min}"` : ''} ${max !== undefined ? `max="${max}"` : ''} ${step !== undefined ? `step="${step}"` : ''} ${suggestions.length ? `list="dl-${esc(name)}"` : ''} ${attrs}>`;
+    }
+    const list = suggestions.length
+      ? `<datalist id="dl-${esc(name)}">${suggestions.map((s) => `<option value="${esc(s)}"></option>`).join('')}</datalist>`
+      : '';
+    return `<div class="field ${full ? 'field-full' : ''}"><label for="${id}">${esc(label)}${required ? ' <span class="req">*</span>' : ''}</label>${control}${list}${help ? `<small>${esc(help)}</small>` : ''}</div>`;
+  }
+
+  function formGrid(fields) {
+    return '<div class="form-grid">' + fields.join('') + '</div>';
+  }
+
+  const STATUS = {
+    completed: { label: 'Selesai', cls: 'ok' },
+    ongoing: { label: 'Berjalan', cls: 'run' },
+    upcoming: { label: 'Akan datang', cls: 'idle' },
+    missed: { label: 'Terlewat', cls: 'miss' },
+    skipped: { label: 'Dilewati', cls: 'skip' }
+  };
+
+  function badge(status) {
+    const s = STATUS[status] || STATUS.upcoming;
+    return `<span class="badge badge-${s.cls}"><span class="badge-dot"></span>${s.label}</span>`;
+  }
+
+  function chip(text, tone = 'neutral') {
+    return `<span class="chip chip-${tone}">${esc(text)}</span>`;
+  }
+
+  function ring(pct, label, sub = '') {
+    const p = Utils.clamp(Number(pct) || 0, 0, 100);
+    const r = 42, c = 2 * Math.PI * r;
+    return `<div class="ring" role="img" aria-label="${p}% ${esc(label)}">
+      <svg viewBox="0 0 100 100" aria-hidden="true">
+        <circle class="ring-bg" cx="50" cy="50" r="${r}"></circle>
+        <circle class="ring-fg" cx="50" cy="50" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p / 100)}"></circle>
+      </svg>
+      <div class="ring-label"><strong>${p}%</strong><span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ''}</div>
+    </div>`;
+  }
+
+  function bar(pct, tone = 'primary', label = 'Progres') {
+    return `<div class="bar" role="progressbar" aria-label="${esc(label)}" aria-valuenow="${Utils.clamp(pct, 0, 100)}" aria-valuemin="0" aria-valuemax="100"><span class="bar-fill bar-${tone}" style="width:${Utils.clamp(pct, 0, 100)}%"></span></div>`;
+  }
+
+  function section(title, subtitle = '', action = '') {
+    return `<div class="section-head"><div><h2>${esc(title)}</h2>${subtitle ? `<p>${esc(subtitle)}</p>` : ''}</div>${action}</div>`;
+  }
+
+  function empty(iconName, title, text = '') {
+    return `<div class="empty">${ic(iconName, 26)}<strong>${esc(title)}</strong>${text ? `<span>${esc(text)}</span>` : ''}</div>`;
+  }
+
+  function pageHead(eyebrow, title, desc, actions = '') {
+    return `<div class="page-head"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2>${desc ? `<p>${esc(desc)}</p>` : ''}</div>${actions ? `<div class="page-actions">${actions}</div>` : ''}</div>`;
+  }
+
+  function initModal() {
+    const d = dialog();
+    document.getElementById('modal-close').innerHTML = ic('close', 20);
+    document.getElementById('modal-cancel').addEventListener('click', () => closeModal());
+    const submit = document.getElementById('modal-submit');
+    submit.insertAdjacentHTML('beforeend', sendIcon());
+    submit.addEventListener('click', () => {
+      if (submit.disabled) return;
+      if (!modalState || !modalState.onSubmit) return closeModal();
+      const form = document.getElementById('modal-form');
+      const result = modalState.onSubmit(form, new FormData(form));
+      if (result === false) return;
+      // ANIMATED ICON 05 — satu tombol, feedback "terbang lalu kembali".
+      submit.disabled = true;
+      submit.classList.add('is-sending');
+      setTimeout(() => {
+        closeModal();
+        submit.disabled = false;
+        submit.classList.remove('is-sending');
+      }, 720);
+    });
+    document.getElementById('modal-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      document.getElementById('modal-submit').click();
+    });
+    d.addEventListener('click', (e) => {
+      if (e.target === d) closeModal();
+    });
+    d.addEventListener('close', () => {
+      document.body.classList.remove('has-modal');
+      if (modalState && modalState.onSubmit) modalState = null;
+    });
+  }
+
+  /* ---------- Ikon yang ber-morph, bukan di-swap ---------- */
+  function checkIcon(done) {
+    return `<svg class="icon check-morph ${done ? 'is-checked' : ''}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect class="check-box" x="4" y="4" width="16" height="16" rx="4"></rect>
+      <path class="check-mark" d="m7 12.4 3.4 3.4L17.4 9"></path>
+    </svg>`;
+  }
+
+  function downloadIcon() {
+    return `<svg class="icon download-morph" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path class="dl-arrow" d="M12 3v11m0 0 4-4m-4 4-4-4"></path>
+      <path class="dl-base" d="M4 17v3h16v-3"></path>
+      <circle class="dl-ring" cx="12" cy="12" r="9"></circle>
+      <path class="dl-check" d="m8 12.4 3 3 5-6"></path>
+    </svg>`;
+  }
+
+  function sendIcon() {
+    return `<svg class="icon send-morph" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path class="send-trail" d="M9 14 20 4"></path>
+      <path class="send-plane" d="M21 3 3 10.6l7.1 2.3 2.3 7.1L21 3Z"></path>
+    </svg>`;
+  }
+
+  function themeIcon(isDark, key = 'main') {
+    const mask = 'theme-mask-' + key;
+    return `<svg class="icon theme-morph ${isDark ? 'is-dark' : 'is-light'}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+      <defs><mask id="${mask}"><rect width="24" height="24" fill="#fff"></rect><circle class="crescent-cut" cx="17" cy="6" r="8" fill="#000"></circle></mask></defs>
+      <g class="sun-rays">
+        <line x1="12" y1="1.5" x2="12" y2="3.5"></line><line x1="12" y1="20.5" x2="12" y2="22.5"></line>
+        <line x1="1.5" y1="12" x2="3.5" y2="12"></line><line x1="20.5" y1="12" x2="22.5" y2="12"></line>
+        <line x1="4.6" y1="4.6" x2="6" y2="6"></line><line x1="18" y1="18" x2="19.4" y2="19.4"></line>
+        <line x1="4.6" y1="19.4" x2="6" y2="18"></line><line x1="18" y1="6" x2="19.4" y2="4.6"></line>
+      </g>
+      <circle class="theme-disc" cx="12" cy="12" r="5.2" mask="url(#${mask})"></circle>
+      <g class="sparkles" fill="currentColor" stroke="none">
+        <path d="m18.5 3 .7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2Z"></path>
+        <path d="m5 16 .5 1.5L7 18l-1.5.5L5 20l-.5-1.5L3 18l1.5-.5L5 16Z"></path>
+      </g>
+    </svg>`;
+  }
+
+  function searchIcon(open) {
+    return `<svg class="icon search-morph ${open ? 'is-open' : ''}" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+      <circle class="s-ring" cx="10.5" cy="10.5" r="6.5"></circle>
+      <line class="s-handle" x1="15.4" y1="15.4" x2="20" y2="20"></line>
+      <line class="s-x" x1="7.5" y1="7.5" x2="16.5" y2="16.5"></line>
+      <line class="s-x" x1="16.5" y1="7.5" x2="7.5" y2="16.5"></line>
+    </svg>`;
+  }
+
+  function lockIcon(locked) {
+    return `<svg class="icon lock-morph ${locked ? '' : 'is-unlocked'}" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path class="lock-shackle" d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+      <rect class="lock-body" x="5" y="10" width="14" height="11" rx="2.5"></rect>
+      <circle class="lock-keyhole" cx="12" cy="15" r="1.2" fill="currentColor" stroke="none"></circle>
+    </svg>`;
+  }
+
+  function themeTransition() {
+    const el = document.documentElement;
+    el.classList.add('theme-switching');
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(() => el.classList.remove('theme-switching'), 660);
+  }
+
+  function animateDownload(btn, run) {
+    const icon = btn && btn.querySelector('.download-morph');
+    if (!icon) { run(); return; }
+    btn.disabled = true;
+    icon.classList.add('is-loading');
+    setTimeout(() => {
+      run();
+      icon.classList.remove('is-loading');
+      icon.classList.add('is-done');
+      setTimeout(() => { icon.classList.remove('is-done'); btn.disabled = false; }, 900);
+    }, 650);
+  }
+
+  return {
+    toast, openModal, closeModal, confirm, field, formGrid, badge, chip, ring, bar,
+    section, empty, pageHead, initModal, STATUS,
+    checkIcon, downloadIcon, sendIcon, themeIcon, searchIcon, lockIcon, themeTransition, animateDownload
+  };
+})();
