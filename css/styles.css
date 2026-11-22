@@ -157,12 +157,19 @@ ul { margin: 0; padding: 0; list-style: none; }
   width: 100%; max-width: 1320px; min-height: calc(100vh - 24px);
   display: flex; flex-direction: column;
   background: var(--slab-fill);
-  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  /* backdrop-filter tidak dipasang langsung di .app-shell: filter menciptakan
+     containing block untuk fixed descendant, sehingga sidebar/backdrop ikut
+     bergeser saat halaman di-scroll. Blur slab dipindah ke .slab-glass. */
   border-radius: 24px;
   border: 1.5px solid var(--white-line);
   box-shadow: var(--shadow);
   /* clip menjaga sudut membulat tanpa membuat sticky topbar terkurung scroll container. */
   overflow: clip;
+}
+.slab-glass {
+  position: absolute; inset: 0; border-radius: inherit;
+  backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+  pointer-events: none; z-index: 0;
 }
 .app-shell::before {
   content: ""; position: absolute; inset: 3px; border-radius: 21px;
@@ -177,27 +184,27 @@ ul { margin: 0; padding: 0; list-style: none; }
 
 /* ---------- Sidebar / drawer ---------- */
 .sidebar {
-  position: fixed; inset: 0 auto 0 0; z-index: 80;
-  width: 256px; height: 100dvh;
+  position: fixed; inset: 12px auto 12px 12px; z-index: 80;
+  width: min(290px, calc(100vw - 24px)); height: auto;
   display: flex; flex-direction: column; justify-content: space-between;
   padding: 20px;
   background: linear-gradient(160deg, rgba(255,255,255,.72), rgba(255,255,255,.42));
   backdrop-filter: blur(24px) saturate(150%); -webkit-backdrop-filter: blur(24px) saturate(150%);
-  border-right: 1px solid var(--white-line);
-  transform: translateX(-105%);
+  border: 1px solid var(--white-line);
+  border-radius: var(--radius);
+  box-shadow: 0 18px 50px rgba(15,23,42,.22);
+  transform: translateX(-116%);
   transition: transform .3s cubic-bezier(.22,1,.36,1);
   overflow-y: auto;
 }
 [data-theme="dark"] .sidebar { background: linear-gradient(160deg, rgba(30,38,54,.94), rgba(20,26,38,.92)); }
 body.sidebar-open .sidebar { transform: translateX(0); }
-/* Scrim harus berada di dalam stacking context .app-shell, di bawah sidebar.
-   Jika diletakkan sebagai sibling body, z-index 70 menutupi sidebar (z-index 80)
-   karena .app-shell membentuk stacking context sendiri (backdrop-filter + z-index),
-   sehingga semua tap kena scrim dan sidebar jadi blur. */
+/* Backdrop dan sidebar kini sama-sama fixed terhadap viewport (bukan terhadap
+   .app-shell), sehingga tetap menempel saat halaman di-scroll. Keduanya masih
+   berbagi stacking context app-shell: scrim z70 dilukis di bawah sidebar z80. */
 .mobile-backdrop {
-  position: absolute; inset: 0; z-index: 70;
-  border-radius: inherit;
-  background: rgba(15,23,42,.25); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(15,23,42,.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .25s ease, visibility .25s ease;
 }
@@ -1011,10 +1018,11 @@ html.theme-switching .day-chip, html.theme-switching .activity-item, html.theme-
 @media (min-width: 1024px) {
   .app-shell { flex-direction: row; align-items: stretch; }
   .sidebar {
-    position: static; width: 256px; height: auto; transform: none; flex: none;
+    position: static; inset: auto; width: 256px; height: auto; transform: none; flex: none;
     overflow: visible; background: rgba(255,255,255,.10);
     backdrop-filter: none; -webkit-backdrop-filter: none;
-    border-right: 1px solid var(--white-line-soft);
+    border: 0; border-right: 1px solid var(--white-line-soft);
+    border-radius: 0; box-shadow: none;
   }
   [data-theme="dark"] .sidebar { background: rgba(15,21,32,.32); }
   .mobile-backdrop, .brand-close, .menu-toggle { display: none; }

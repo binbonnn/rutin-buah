@@ -600,7 +600,7 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 | Drawer 390px | `body.sidebar-open`, sidebar `x=13`, `aria-expanded=true` |
 | Modal / checklist / bento / tema | berfungsi, 0 console error |
 | Lighthouse light & dark | Accessibility **1.00**, Best Practices **1.00**, SEO **1.00**, **0 failures** |
-| Service worker | cache `rutin-buah-v23` |
+| Service worker | cache `rutin-buah-v24` |
 
 > Catatan: sisa `scrollWidth > clientWidth` pada elemen dengan `text-overflow: ellipsis` atau pseudo-element area tap adalah _clip behavior_ yang disengaja; tidak menghasilkan scroll horizontal dokumen.
 
@@ -636,8 +636,25 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 
 **Perbaikan.**
 - `#mobile-backdrop` dipindahkan ke dalam `.app-shell`, tepat sebelum `.sidebar`, sehingga keduanya berbagi stacking context yang sama.
-- Backdrop memakai `position:absolute; inset:0; border-radius:inherit; z-index:70`, sidebar tetap `z-index:80` → scrim melukis di bawah sidebar (konten utama blur, menu tetap tajam dan bisa ditekan).
+- Backdrop memakai `position:absolute; inset:0; z-index:70`, sidebar tetap `z-index:80` → scrim melukis di bawah sidebar (konten utama blur, menu tetap tajam dan bisa ditekan). Pendekatan v23 ini diperbaiki lagi di Lampiran 4.
 - Ditambahkan `pointer-events:none` saat tertutup dan `pointer-events:auto` saat `body.sidebar-open`, plus fallback klik di luar sidebar/Escape untuk menutup.
-- `CACHE` service worker dinaikkan ke `rutin-buah-v23` agar perbaikan tidak tertahan cache-first.
+- `CACHE` service worker dinaikkan ke `rutin-buah-v24` agar perbaikan tidak tertahan cache-first.
 
 **Verifikasi.** Lebar 360px & 800px (terang dan gelap): `closeHit=path` (bukan backdrop), `body.sidebar-open` aktif, `aria-expanded=true`, tombol Tutup / item nav / backdrop / Escape semuanya menutup drawer, `overflow` tubuh pulih, `scrollWidth - clientWidth = 0`, 0 console error.
+
+---
+
+# LAMPIRAN 4 — Drawer Rusak Setelah Halaman Di-scroll
+
+**Gejala.** Jika halaman digeser ke bawah dulu lalu hamburger ditekan, layar menjadi full blur dan tidak ada yang bisa ditekan. Drawer hanya normal saat posisi scroll masih di atas.
+
+**Akar masalah (terukur).** Perbaikan v23 memindahkan backdrop ke dalam `.app-shell`, tetapi `.app-shell` masih memasang `backdrop-filter: blur(28px)` langsung pada dirinya. `backdrop-filter` menciptakan **containing block untuk descendant `position:fixed`**. Karena `.app-shell` tingginya mengikuti seluruh dokumen, saat di-scroll posisi sidebar `fixed` ikut naik bersama slab: terukur `shell.y=-972`, `sidebar.y=-971`, `closeButton.y=-949` (di luar layar), sementara backdrop menutup viewport. `elementFromPoint()` pada tombol Tutup mengembalikan `mobile-backdrop`.
+
+**Perbaikan.**
+- `backdrop-filter` dilepas dari `.app-shell`; blur slab dipindah ke child baru `.slab-glass` (`position:absolute; inset:0; border-radius:inherit; z-index:0; pointer-events:none`).
+- Kini tidak ada ancestor dengan `transform`/`filter`/`backdrop-filter`/`contain`/`will-change`, sehingga `.sidebar` dan `.mobile-backdrop` benar-benar `fixed` terhadap **viewport**.
+- Sidebar mobile: `inset:12px auto 12px 12px`, `width:min(290px,calc(100vw - 24px))`, tinggi mengikuti sisa viewport, radius + shadow; backdrop kembali `position:fixed; inset:0; z-index:70`.
+- Desktop (`>=1024px`) tetap rail statis: override `position:static; inset:auto; border:0; border-right:...; border-radius:0; box-shadow:none`.
+- `CACHE` dinaikkan ke `rutin-buah-v24`.
+
+**Verifikasi.** Simulasi halaman tergeser (`app-shell.y=-472`): sidebar `x=12,y=12`, backdrop `x=0,y=0`, `closeHit=path`, `navHit=SPAN`; Tutup / backdrop / Escape menutup drawer. Desktop 1280px: sidebar `position:static` berdampingan dengan main (`x=33`, `x=289`), `slab-glass` tetap `blur(28px)`, 0 overflow, 0 console error.
