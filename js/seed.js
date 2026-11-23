@@ -30,9 +30,10 @@ const Seed = (() => {
     seminarDate: '',
     thesisTopic: '', // X-04: judul pribadi pembuat dipindah ke onboarding pengguna
     shoppingDays: { main: 7, refill: 3 },
-    // C.10: rekomendasi dokumen — toleransi 10 menit dan aturan mulai Senin depan.
+    // C.10: toleransi 10 menit. Aturan langsung aktif mulai Senin pekan berjalan;
+    // hanya tanggal sebelum itu yang tetap memakai jalur lama (anti-retroaktif).
     markGraceMinutes: 10,
-    strictSince: Utils.nextMondayKey(new Date()),
+    strictSince: Utils.weekKey(new Date()),
     notifications: {
       enabled: true,
       activity: true,

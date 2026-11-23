@@ -2,6 +2,14 @@
 
 Semua perubahan Signifikan dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/); proyek ini belum memakai Semantic Versioning secara ketat.
 
+## [1.2.1] — 2026-11-23
+
+**Perbaikan Jendela Aktif**
+- `strictSince` sebelumnya diset ke Senin **berikutnya**, sehingga seluruh aktivitas dalam pekan pembaruan masih memakai jalur lama: aktivitas terlewat tetap bisa dicentang dan aktivitas ≥ 20 menit tetap bisa langsung diselesaikan tanpa `Mulai`.
+- Instalasi baru dan data yang sudah ada kini memakai `strictSince` = **Senin pekan berjalan**. Nilai lama yang masih di masa depan ditarik ke Senin pekan berjalan saat state dinormalisasi; catatan/completion lama tidak diubah.
+- Service worker cache bump `rutin-buah-v32` → `rutin-buah-v33` agar perbaikan langsung terpasang.
+- Tes regresi bertambah menjadi **22 tes** (instalasi baru, migrasi `strictSince`, aktivitas terlewat terkunci, dan jalur lama sebelum Senin).
+
 ## [1.2.0] — 2026-11-23
 
 Remediasi hasil audit kedua (`AUDIT-V2-dan-Saran-Evaluasi-Mingguan.md`) sekaligus Fase 0–3: Jendela Aktif, Evaluasi Mingguan, dan otomasi pengujian. Skema data naik ke **3**.

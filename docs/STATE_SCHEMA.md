@@ -1,6 +1,6 @@
 # Skema State Lokal — `rutin-buah:v1`
 
-Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 3` (`APP_VERSION = 1.2.0`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
+Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 3` (`APP_VERSION = 1.2.1`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
 
 ## Bentuk umum
 
@@ -17,7 +17,7 @@ Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci *
     seminarDate: 'YYYY-MM-DD' | '', thesisTopic: string,
     shoppingDays: { main: 1..7, refill: 1..7 },
     markGraceMinutes: 0..30,        // toleransi Jendela Aktif, default 10
-    strictSince: 'YYYY-MM-DD',      // Senin pertama aturan baru berlaku
+    strictSince: 'YYYY-MM-DD',      // Senin pekan berjalan; tanggal sebelumnya memakai jalur lama
     notifications: {
       enabled, activity, fruit, shopping, lowStock, bedtime, review: boolean,
       activityLeadMinutes: number,
@@ -85,7 +85,7 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 - **Waktu** disimpan sebagai `HH.mm` (titik, bukan titik dua). `Utils.parseTime` menolak format salah; `fmtTimeColon` dipakai untuk input `<input type="time">`.
 - **Tanggal** memakai `YYYY-MM-DD` (`Utils.dateKey` / `Utils.fromKey`). Minggu juga dikunci ke tanggal **Senin**; label ISO `YYYY-Www` hanya dipakai untuk nama berkas dan kunci pengingat lama.
 - **Aktivitas** memiliki `id` stabil dan `templateId`. `isRecurring !== false` berarti aktivitas muncul tiap minggu; jika `false`, hanya muncul pada `date`-nya. `applyTemplate()` menjamin ID unik dan melewati aktivitas yang telah diedit/dihapus.
-- **Jendela Aktif** (untuk tanggal ≥ `strictSince`):
+- **Jendela Aktif** (untuk tanggal ≥ `strictSince`, default = Senin pekan berjalan):
   - `opensAt = tanggal + startTime`
   - `closesAt = max(tanggal + endTime, opensAt + 10 menit)`; jika `endTime < startTime`, endTime dianggap hari berikutnya. Jika `endTime === startTime` (durasi 0), tetap dipakai minimum 10 menit.
   - `lastTick = closesAt + markGraceMinutes`
@@ -105,7 +105,7 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 
 1. Cadangan lama (`version` < 2) dinormalisasi: item belanja dengan ID duplikat diberi `Utils.uid('shop')` dan `templateId` diisi dari `id`.
 2. Cadangan `version` < 3: aktivitas dengan ID duplikat dibongkar (edit pengguna diutamakan) dan string `completion` lama diubah menjadi record v3.
-3. Setiap migrasi menambah `weeklyReviews` & `restDays`, mengisi `strictSince` = Senin berikutnya bila kosong, dan membatasi `markGraceMinutes` ke 0–30.
+3. Setiap migrasi menambah `weeklyReviews` & `restDays`, mengisi `strictSince` = Senin pekan berjalan bila kosong **atau masih di masa depan**, dan membatasi `markGraceMinutes` ke 0–30.
 4. Jika parsed data cacat, raw disimpan di `rutin-buah:v1:corrupt-<timestamp>` dan aplikasi memakai state awal (safe mode menawarkan unduh data mentah).
 5. Impor JSON divalidasi dengan `Store.describeImport()`; cadangan state saat ini ditulis ke `rutin-buah:v1:pre-import` sebelum ditimpa. Laporan evaluasi yang sudah kedaluwarsa dilewati dan tidak diperpanjang umurnya.
 6. Ekspor JSON menghasilkan pembungkus `{ appVersion, schemaVersion, exportedAt, state }`. Laporan evaluasi hanya diekspor sebagai Markdown `.md`, bukan JSON importable.
@@ -114,7 +114,7 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 
 ```json
 {
-  "appVersion": "1.2.0",
+  "appVersion": "1.2.1",
   "schemaVersion": 3,
   "exportedAt": "2026-11-23T04:30:00.000Z",
   "state": {

@@ -139,7 +139,11 @@ const Store = (() => {
     s.generatedWeeks = [...weeks];
     s.restDays = arr(s.restDays, []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(str(d)));
     s.weeklyReviews = normalizeReviews(s.weeklyReviews);
-    s.settings.strictSince = str(s.settings.strictSince) || Utils.nextMondayKey(new Date());
+    // v1.2.1: tarik strictSince yang masih di masa depan ke Senin pekan berjalan.
+    // Catatan lama tidak diubah — hanya penandaan baru yang mengikuti aturan.
+    const currentMonday = Utils.weekKey(new Date());
+    const savedStrict = str(s.settings.strictSince);
+    s.settings.strictSince = !savedStrict || savedStrict > currentMonday ? currentMonday : savedStrict;
     s.settings.markGraceMinutes = Utils.clamp(number(s.settings.markGraceMinutes, 10), 0, GRACE_MAX);
     s.version = SCHEMA_VERSION;
     return s;
@@ -411,7 +415,7 @@ const Store = (() => {
     const closesAt = Math.max(Utils.atMinutes(key, end), opensAt + MIN_WINDOW_MIN * 60000);
     const grace = Utils.clamp(number(target.settings.markGraceMinutes, 10), 0, GRACE_MAX);
     const lastTick = closesAt + grace * 60000;
-    const strictSince = str(target.settings.strictSince) || Utils.nextMondayKey(now);
+    const strictSince = str(target.settings.strictSince) || Utils.weekKey(now);
     return {
       ok: true, reason: '', opensAt, closesAt, lastTick,
       legacy: key < strictSince,

@@ -107,15 +107,57 @@ test('Jendela Aktif: penandaan di luar jendela ditolak di lapisan Store', () => 
   assert.equal(env.Store.setActivityStatus(id, date, 'completed', { now: env.date(2026, 10, 23, 3, 0, 0) }).ok, false);
 });
 
+test('Jendela Aktif langsung berlaku pada instalasi baru (bukan Senin depan)', () => {
+  const env = createEnv();
+  const today = new Date();
+  assert.equal(env.Store.state.settings.strictSince, env.Utils.weekKey(today));
+  const win = env.Store.windowFor(env.Store.state.activities[0], env.Utils.dateKey(today), today);
+  assert.equal(win.legacy, false, 'tanggal hari ini tidak boleh memakai jalur lama');
+});
+
+test('Migrasi menarik strictSince masa depan ke Senin pekan berjalan', () => {
+  const env = createEnv();
+  const base = env.Store.normalizeState({});
+  const future = env.Utils.dateKey(env.Utils.addDays(new Date(), 30));
+  const migrated = env.Store.normalizeState({
+    ...base, settings: { ...base.settings, strictSince: future }
+  });
+  assert.equal(migrated.settings.strictSince, env.Utils.weekKey(new Date()));
+  const past = '2020-01-01';
+  const kept = env.Store.normalizeState({
+    ...base, settings: { ...base.settings, strictSince: past }
+  });
+  assert.equal(kept.settings.strictSince, past, 'nilai lama tidak boleh dimundurkan');
+});
+
+test('Jendela Aktif: aktivitas terlewat terkunci pada instalasi baru', () => {
+  const env = createEnv();
+  const tomorrow = env.Utils.addDays(new Date(), 1);
+  const key = env.Utils.dateKey(tomorrow);
+  const now = env.date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 0, 25, 0);
+  const activity = {
+    id: 'terlewat', title: 'Aktivitas uji', dayOfWeek: env.Utils.dow(tomorrow),
+    category: 'Pribadi', startTime: '00.00', endTime: '00.05',
+    isRecurring: true, isTemplate: false
+  };
+  env.Store.update((s) => { s.activities = [activity]; });
+  const res = env.Store.setActivityStatus(activity.id, key, 'completed', { now });
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /Jendela sudah ditutup/);
+  assert.equal(Object.keys(env.Store.state.completion).length, 0, 'penolakan tidak menulis status');
+});
+
 test('Anti-retroaktif: tanggal sebelum strictSince memakai jalur lama', () => {
   const env = singleActivityEnv();
-  env.Store.update((s) => { s.settings.strictSince = '2030-01-01'; });
-  const date = env.date(...DAY);
-  const win = env.Store.windowFor(env.Store.state.activities[0], date, env.date(2026, 10, 23, 3, 0, 0));
+  const strict = env.Store.state.settings.strictSince;
+  const before = env.Utils.addDays(env.Utils.fromKey(strict), -1);
+  const key = env.Utils.dateKey(before);
+  const now = new Date(before.getFullYear(), before.getMonth(), before.getDate(), 3, 0, 0);
+  const win = env.Store.windowFor(env.Store.state.activities[0], key, now);
   assert.equal(win.legacy, true);
-  const res = env.Store.setActivityStatus(env.Store.state.activities[0].id, date, 'completed', { now: env.date(2026, 10, 23, 3, 0, 0) });
+  const res = env.Store.setActivityStatus(env.Store.state.activities[0].id, key, 'completed', { now });
   assert.equal(res.ok, true);
-  assert.equal(env.Store.state.completion['2026-11-23'][env.Store.state.activities[0].id].src, 'legacy');
+  assert.equal(env.Store.state.completion[key][env.Store.state.activities[0].id].src, 'legacy');
 });
 
 test('Migrasi v2: string completion lama dibaca sebagai status v3', () => {

@@ -2,7 +2,7 @@
 
 Aplikasi web **mobile-first** dan **PWA** untuk mengelola rutinitas mingguan, progres skripsi, konsumsi buah, stok, dan anggaran belanja. Seluruh data tersimpan lokal di browser (`localStorage`) sehingga tetap ada setelah halaman ditutup.
 
-**Versi aplikasi:** 1.2.0 · **Skema data:** 3
+**Versi aplikasi:** 1.2.1 · **Skema data:** 3
 
 ## Menjalankan
 
@@ -52,7 +52,7 @@ Navigasi harian memakai **bottom tab bar** pada layar < 1024 px; Pengaturan teta
 - **Tampilan** — glassmorphism "Liquid Glass Studio": slab putih bevel, bento pastel, pill coral. Lantai ukuran huruf 12 px, target sentuh 44 px, teks koral memakai `--ink-primary` di tema terang dan putih di koral gelap di tema gelap. `prefers-reduced-motion` dan `prefers-reduced-transparency` dihormati.
 - **Penyimpanan** — `rutin-buah:v1`, skema 3. State dinormalisasi & dimigrasi saat dibaca; cadangan pra-impor disimpan di `rutin-buah:v1:pre-import`. Data awal langsung dipersist, penulisan digabung (debounce), dan perubahan antar-tab disinkronkan. `navigator.storage.persist()` diminta setelah aplikasi dimuat. Lihat [`docs/STATE_SCHEMA.md`](docs/STATE_SCHEMA.md).
 - **Status aktivitas** disimpan per tanggal (`completion[YYYY-MM-DD][activityId]`), sehingga menyelesaikan aktivitas Senin tidak otomatis menyelesaikan Selasa. ID template stabil sehingga riwayat tidak hilang saat template diterapkan ulang.
-- **Jendela Aktif** — penandaan hanya berlaku antara jam mulai dan `jam selesai + toleransi` (default 10 menit, diatur di Pengaturan). Aktivitas ≥ 20 menit memakai dua langkah `Mulai` → `Selesai`; durasi 0 tetap punya jendela 10 menit. Aturan berlaku mulai Senin setelah pembaruan (`settings.strictSince`); tanggal lama tetap memakai cara lama. Hari istirahat maksimal 2 per minggu dan tidak dihitung dalam skor.
+- **Jendela Aktif** — penandaan hanya berlaku antara jam mulai dan `jam selesai + toleransi` (default 10 menit, diatur di Pengaturan). Aktivitas ≥ 20 menit memakai dua langkah `Mulai` → `Selesai`; durasi 0 tetap punya jendela 10 menit. Aturan langsung berlaku mulai Senin pekan berjalan (`settings.strictSince`); hanya tanggal sebelum itu yang tetap memakai cara lama. Hari istirahat maksimal 2 per minggu dan tidak dihitung dalam skor.
 - **Evaluasi Mingguan** — pratinjau dibuat Minggu 21.00 dan snapshot final Senin 09.00. Laporan disimpan 4 minggu terakhir, lalu dihapus otomatis; laporan kedaluwarsa yang belum dibuka tetap tampil sekali. Riwayat centang tidak ikut dihapus. Unduh Markdown (`.md`) tersedia per laporan atau sekaligus; format JSON importable tidak disediakan.
 - **Notifikasi** — pengingat dalam-aplikasi memakai jendela waktu 10 menit dan tetap tampil saat tab dibuka/difokuskan walaupun izin browser belum diberikan. Ekspor **kalender `.ics` dengan `VALARM`** mencakup jadwal, belanja, dan dua pengingat evaluasi (Minggu 21.00 serta Senin 09.00) agar tetap berjalan saat aplikasi tertutup. Web Push sungguhan belum tersedia (lihat Batasan).
 - **Ekspor** — JSON (cadangan penuh), Markdown (ringkasan & laporan evaluasi), dan ICS (kalender). Unduhan memakai Blob URL dan tetap berjalan di bawah CSP.
