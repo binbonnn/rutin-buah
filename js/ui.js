@@ -123,7 +123,9 @@ const UI = (() => {
     ongoing: { label: 'Berjalan', cls: 'run' },
     upcoming: { label: 'Akan datang', cls: 'idle' },
     missed: { label: 'Terlewat', cls: 'miss' },
-    skipped: { label: 'Dilewati', cls: 'skip' }
+    skipped: { label: 'Dilewati', cls: 'skip' },
+    inprogress: { label: 'Berjalan', cls: 'run' },
+    excused: { label: 'Hari istirahat', cls: 'skip' }
   };
 
   function badge(status) {

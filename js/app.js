@@ -3,6 +3,7 @@
   const NAV = [
     { key: 'dashboard', label: 'Beranda', icon: 'home', title: 'Beranda' },
     { key: 'jadwal', label: 'Jadwal', icon: 'calendar', title: 'Jadwal Mingguan' },
+    { key: 'evaluasi', label: 'Evaluasi', icon: 'chart', title: 'Evaluasi Mingguan' },
     { key: 'skripsi', label: 'Skripsi', icon: 'book', title: 'Skripsi' },
     { key: 'buah', label: 'Buah', icon: 'fruit', title: 'Buah & Stok' },
     { key: 'belanja', label: 'Belanja', icon: 'cart', title: 'Belanja' },
@@ -11,7 +12,7 @@
   const TAB_KEYS = ['dashboard', 'jadwal', 'skripsi', 'buah', 'belanja'];
 
   const PAGES = {
-    dashboard: Pages.dashboard, jadwal: Pages.jadwal, skripsi: Pages.skripsi,
+    dashboard: Pages.dashboard, jadwal: Pages.jadwal, evaluasi: Pages.evaluasi, skripsi: Pages.skripsi,
     buah: Pages.buah, belanja: Pages.belanja, pengaturan: Pages.pengaturan
   };
 
@@ -20,6 +21,25 @@
   let lastRouteKey = '';
   let lastDayKey = Utils.dateKey(new Date());
   let safeMode = false;
+
+  /** N-02: paksa tulisan terakhir sebelum blur, pindah tab, atau tutup halaman. */
+  function flushMentorNotes() {
+    if (!window.__mentorT) return;
+    clearTimeout(window.__mentorT);
+    window.__mentorT = null;
+    const el = document.getElementById('mentor-notes');
+    if (el) Store.saveMentorNotes(el.value);
+  }
+
+  /** D.1: evaluasi dibuat otomatis, idempoten, dan hanya sekali per minggu. */
+  function syncReviews() {
+    const before = Store.reviewStats().count;
+    const result = Store.ensureReviews();
+    if (!result.created && !result.promoted) return;
+    if (!before && Store.reviewStats().count) {
+      UI.toast('Laporan evaluasi mingguan sudah tersedia. Buka menu Evaluasi.', 'info');
+    }
+  }
 
   function parseRoute() {
     const raw = (location.hash || '').replace(/^#\/?/, '');
@@ -339,7 +359,7 @@
       const handler = Pages.Actions[el.dataset.action];
       if (!handler) return;
       e.preventDefault();
-      if (['export-data', 'export-md', 'export-ics'].includes(el.dataset.action)) {
+      if (['export-data', 'export-md', 'export-ics', 'download-review', 'download-all-reviews'].includes(el.dataset.action)) {
         UI.animateDownload(el, () => {
           try { handler(el); } catch (err) { console.error(err); UI.toast('Aksi gagal: ' + err.message, 'error'); }
         });
@@ -353,12 +373,12 @@
       if (el.matches('[data-action="activity-search"]') && typeof Pages.filterActivities === 'function') {
         Pages.filterActivities(el.value);
       }
-      // D-05: autosave tanpa render ulang.
+      // N-02: autosave lewat Store.update (flush antrean dulu), tanpa render ulang.
       if (el.id === 'mentor-notes') {
         clearTimeout(window.__mentorT);
         window.__mentorT = setTimeout(() => {
-          Store.state.mentorshipNotes = el.value;
-          Store.persistSoon();
+          window.__mentorT = null;
+          Store.saveMentorNotes(el.value);
         }, 400);
       }
       // F-01: pratinjau pengurangan stok di modal konsumsi.
@@ -397,6 +417,7 @@
     });
     document.addEventListener('focusout', (e) => {
       const el = e.target;
+      if (el.id === 'mentor-notes') { flushMentorNotes(); return; }
       if (!el.matches?.('[data-money]')) return;
       const n = rawMoney(el.value);
       el.value = n ? n.toLocaleString('id-ID') : '';
@@ -445,17 +466,18 @@
 
     window.addEventListener('hashchange', () => route());
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) { Store.flush(); return; }
+      if (document.hidden) { flushMentorNotes(); Store.flush(); return; }
       Store.reloadFromStorage();
       Store.refreshWeek();
+      syncReviews();
       applyTheme();
       checkNotifications();
       const today = Utils.dateKey(new Date());
       if (today !== lastDayKey) { lastDayKey = today; render(true); }
-      else render();
+      else Pages.refreshLiveStates();
     });
     window.addEventListener('focus', checkNotifications);
-    window.addEventListener('pagehide', Store.flush);
+    window.addEventListener('pagehide', () => { flushMentorNotes(); Store.flush(); });
     if (window.matchMedia) {
       matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => {
         if (Store.state.settings.theme === 'system') applyTheme();
@@ -512,6 +534,18 @@
           const k = `${key}:activity:${a.id}`;
           if (markNotified(k)) notify('Segera: ' + a.title, `Mulai pukul ${Utils.fmtTime(a.startTime)} · ${a.category}`, k, './index.html', `Segera: ${a.title}`);
         }
+        // C.8: buka/tutup jendela hanya sekali per hari per aktivitas.
+        const win = Store.windowFor(a, now, now, Store.state);
+        if (!win.ok || win.legacy) return;
+        const ms = now.getTime();
+        if (ms >= win.opensAt && ms < win.opensAt + 60000) {
+          const k = `${key}:window-open:${a.id}`;
+          if (markNotified(k)) notify('Jendela dibuka: ' + a.title, `Tersedia sampai ${Utils.fmtTime(win.start)} plus toleransi.`, k, './index.html#/jadwal', 'Jendela dibuka: ' + a.title);
+        }
+        if (ms >= win.closesAt && ms < win.closesAt + 60000) {
+          const k = `${key}:window-close:${a.id}`;
+          if (markNotified(k)) notify('Jendela ditutup: ' + a.title, 'Toleransi 10 menit berjalan. Setelah itu penandaan dikunci.', k, './index.html#/jadwal', 'Jendela ditutup: ' + a.title);
+        }
       });
     }
 
@@ -550,6 +584,18 @@
         const k = `${key}:bedtime`;
         if (markNotified(k)) notify('Waktu persiapan tidur', 'Target tidur ' + Utils.fmtTime(Store.state.settings.bedtime) + '.', k, './index.html', 'Waktu persiapan tidur.');
       }
+    }
+
+    if (n.review && Utils.withinWindow(21 * 60, current, 10) && Utils.dow(now) === 7) {
+      const k = `${Utils.weekKey(now)}:review-preview`;
+      if (markNotified(k)) notify('Pratinjau evaluasi mingguan', 'Minggu 21.00 — laporan pratinjau siap dibuka.', k, './index.html#/evaluasi', 'Pratinjau evaluasi mingguan siap dibuka.');
+    }
+    if (n.review && Utils.withinWindow(9 * 60, current, 10) && Utils.dow(now) === 1) {
+      const k = `${Utils.weekKey(now)}:review-final`;
+      const expiring = Store.reviewStats().expiring;
+      if (markNotified(k)) notify('Laporan evaluasi mingguan', expiring
+        ? `Laporan ${expiring.isoWeek} akan dihapus Senin depan. Unduh bila perlu.`
+        : 'Senin 09.00 — laporan final siap dibuka atau diunduh.', k, './index.html#/evaluasi', 'Laporan evaluasi mingguan siap dibuka.');
     }
   }
 
@@ -605,14 +651,16 @@
     bindEvents();
     registerSW();
     Pages.setViewDate(new Date());
+    syncReviews();
     route(true);
     Pages.updateNotifStatus();
     checkNotifications();
     setInterval(() => {
       checkNotifications();
+      syncReviews();
       const today = Utils.dateKey(new Date());
       if (today !== lastDayKey) { lastDayKey = today; render(true); }
-      else render();
+      else Pages.refreshLiveStates();
     }, 60000);
     requestPersistentStorage();
     setTimeout(initOnboarding, 300);

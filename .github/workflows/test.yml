@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Periksa sintaks JavaScript
+        run: |
+          for f in js/*.js scripts/*.js sw.js; do
+            node --check "$f"
+          done
+
+      - name: Validasi JSON/manifest
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            for (const f of ['package.json', 'manifest.webmanifest']) {
+              JSON.parse(fs.readFileSync(f, 'utf8'));
+              console.log(f + ': valid');
+            }
+          "
+
+      - name: Jalankan tes regresi
+        run: npm test

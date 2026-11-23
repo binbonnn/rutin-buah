@@ -5,7 +5,7 @@ const Utils = (() => {
   const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
   // Q-09: satu sumber versi aplikasi (dipakai UI, ekspor, dan dokumentasi).
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
 
   const pad = (n) => String(n).padStart(2, '0');
 
@@ -91,6 +91,40 @@ const Utils = (() => {
 
   function weekKey(date) {
     return dateKey(startOfWeek(date));
+  }
+
+  /** Evaluasi memakai kunci Senin lokal; label ISO dipakai pada nama berkas. */
+  function isoWeekParts(date) {
+    const d = date instanceof Date ? date : new Date(date);
+    const utc = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = utc.getUTCDay() || 7;
+    utc.setUTCDate(utc.getUTCDate() + 4 - day);
+    const year = utc.getUTCFullYear();
+    const start = new Date(Date.UTC(year, 0, 1));
+    const week = Math.ceil(((utc - start) / 86400000 + 1) / 7);
+    return { year, week };
+  }
+
+  function isoWeekKey(date) {
+    const { year, week } = isoWeekParts(date);
+    return `${year}-W${pad(week)}`;
+  }
+
+  /** Senin berikutnya; dipakai sebagai tanggal mulai aturan Jendela Aktif. */
+  function nextMondayKey(date = new Date()) {
+    return dateKey(addDays(startOfWeek(date), 7));
+  }
+
+  /** Tanggal + menit (boleh >1440) → epoch ms lokal, aman untuk lintas tengah malam. */
+  function atMinutes(key, minutes) {
+    const base = fromKey(key) || new Date();
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), 0, 0, 0, 0).getTime() + number(minutes) * 60000;
+  }
+
+  function fileDate(date) {
+    const d = date instanceof Date ? date : fromKey(date);
+    if (!d) return '';
+    return pad(d.getDate()) + '-' + MONTHS[d.getMonth()].slice(0, 3).toLowerCase() + '-' + d.getFullYear();
   }
 
   function formatDate(date, opts = {}) {
@@ -217,6 +251,10 @@ const Utils = (() => {
       info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
       target: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
       sparkle: '<path d="m12 3 1.6 4.9L18.5 9.5l-4.9 1.6L12 16l-1.6-4.9L5.5 9.5l4.9-1.6L12 3Z"/><path d="m19 15 .8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"/>',
+      chart: '<path d="M4 20V4M4 20h16"/><path d="M8 17v-5M12 17V8M16 17v-8M20 17v-3"/>',
+      play: '<path d="M8 5.5v13l10-6.5-10-6.5Z"/>',
+      share: '<circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/>',
+      lock: '<rect x="5" y="10" width="14" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><circle cx="12" cy="15" r="1.1" fill="currentColor" stroke="none"/>',
       history: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4"/><path d="M12 7.5V12l3 2"/>',
       snack: '<path d="M6 3h12l-1.5 18h-9L6 3Z"/><path d="M7 9h10M8.5 15h7"/>',
       flag: '<path d="M5 21V4m0 1c4-3 8 3 14 0v9c-6 3-10-3-14 0"/>'
@@ -227,7 +265,8 @@ const Utils = (() => {
 
   return {
     APP_VERSION, DAY_NAMES, DAY_SHORT, MONTHS, pad, uid, parseTime, wrapMinutes, fmtTime, fmtTimeColon, dow, dayName,
-    dateKey, fromKey, addDays, startOfWeek, weekDates, weekKey, formatDate, relativeDay,
+    dateKey, fromKey, addDays, startOfWeek, weekDates, weekKey, isoWeekParts, isoWeekKey, nextMondayKey, atMinutes, fileDate,
+    formatDate, relativeDay,
     rupiah, number, clamp, escapeHtml, isObj, mergeDefaults, withinWindow, formatQtyUnit,
     debounce, downloadFile, icon,
     // Alih-alih menghapus nama lama, arahkan ke implementasi yang aman.

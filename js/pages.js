@@ -6,9 +6,37 @@ const Pages = (() => {
 
   let viewDate = new Date();
   let activitySearch = { open: false, query: '' };
+  let evalTab = 'ringkasan';
+  let evalWeek = '';
 
   // CHOICE OVERLOAD: 6 opsi utama lebih dulu, 2 opsi jarang di akhir daftar.
   const CATEGORIES = ['Skripsi', 'Kerja', 'Olahraga', 'Pribadi', 'Makan', 'Lainnya', 'Membaca', 'Ibadah'];
+
+  /**
+   * C.6/F-11: satu tombol kontekstual. Tombol yang terkunci tetap bisa
+   * difokus (aria-disabled) supaya alasannya terdengar, lalu aksi menolak
+   * lewat Store.canMark — bukan sekadar menyembunyikan tombol.
+   */
+  function activityControl(a, key, compact = false) {
+    const now = new Date();
+    const date = Utils.fromKey(key) || now;
+    const status = Store.activityStatus(a, date);
+    const raw = Store.statusOf((S().completion[key] || {})[a.id]);
+    const win = Store.windowFor(a, key, now, S());
+    const finished = raw === 'completed' || raw === 'skipped' || raw === 'excused';
+    const want = finished ? 'undo' : (win.long && raw !== 'inprogress' ? 'start' : 'complete');
+    const check = Store.canMark(a, key, want, now, S());
+    const locked = !check.ok;
+    let label = `Tandai selesai: ${a.title}`;
+    if (want === 'undo') label = `Batalkan penandaan: ${a.title}`;
+    else if (want === 'start') label = `Mulai: ${a.title}`;
+    else if (raw === 'inprogress') label = `Selesaikan: ${a.title}`;
+    const mark = want === 'start' && !locked ? ic('play', 18) : UI.checkIcon(raw === 'completed');
+    return `<button class="check ${locked ? 'is-locked' : ''} ${raw === 'inprogress' ? 'is-running' : ''} ${compact ? 'check-sm' : ''}"
+      type="button" data-action="toggle-activity" data-id="${esc(a.id)}" data-date="${esc(key)}"
+      aria-label="${esc(label)}" aria-pressed="${raw === 'completed'}" aria-disabled="${locked}"
+      title="${esc(locked ? check.reason : label)}" data-reason="${esc(check.reason || '')}">${mark}</button>`;
+  }
 
   /* ============================ BERANDA ============================ */
   function dashboard() {
@@ -39,12 +67,10 @@ const Pages = (() => {
          <p>${esc(Utils.fmtTime(next.a.startTime))} – ${esc(Utils.fmtTime(next.a.endTime))} · ${esc(next.a.category)}</p>`
       : `<div class="next-top">${UI.chip('Selesai', 'ok')}</div><h3>Semua jadwal hari ini tertangani</h3><p>Setelahnya, fokus pada pemulihan dan persiapan besok.</p>`;
 
+    const todayKey = Utils.dateKey(now);
     const checklist = statuses.length ? statuses.map(({ a, status }) => `
       <li class="task-row ${status === 'completed' ? 'is-done' : ''}">
-        <button class="check" type="button" data-action="toggle-activity" data-id="${esc(a.id)}" data-date="${Utils.dateKey(now)}"
-          aria-label="Tandai ${esc(a.title)} ${status === 'completed' ? 'belum selesai' : 'selesai'}" aria-pressed="${status === 'completed'}">
-          ${UI.checkIcon(status === 'completed')}
-        </button>
+        ${activityControl(a, todayKey, true)}
         <div class="task-main"><strong>${esc(a.title)}</strong><span>${esc(Utils.fmtTime(a.startTime))} – ${esc(Utils.fmtTime(a.endTime))} · ${esc(a.category)}</span></div>
         ${UI.badge(status)}
       </li>`).join('') : UI.empty('calendar', 'Belum ada aktivitas', 'Tambahkan aktivitas untuk hari ini.');
@@ -82,10 +108,31 @@ const Pages = (() => {
     const backupWarn = backupAge != null && backupAge > 14
       ? `<div class="alert alert-warn stock-alert" role="status">${ic('alert', 18)} <span><strong>Cadangan terakhir ${backupAge} hari lalu.</strong> Ekspor data agar catatan tidak hilang bila storage browser dibersihkan.</span><button class="btn btn-soft btn-sm" type="button" data-goto="pengaturan">Buka cadangan</button></div>`
       : '';
+    const restAlert = (S().restDays || []).includes(todayKey)
+      ? `<div class="alert alert-info stock-alert" role="status">${ic('info', 18)} <span><strong>Hari ini ditandai hari istirahat.</strong> Penandaan aktivitas dikecualikan dari skor minggu ini.</span><button class="btn btn-soft btn-sm" type="button" data-action="toggle-rest-day" data-date="${todayKey}">Batalkan</button></div>`
+      : '';
+    const statsReview = Store.reviewStats(now);
+    const reviewWarn = statsReview.expiring
+      ? `<div class="alert alert-warn stock-alert" role="status">${ic('alert', 18)} <span><strong>Laporan ${esc(statsReview.expiring.isoWeek)} akan dihapus Senin depan pukul 09.00.</strong> Unduh bila ingin menyimpannya.</span><button class="btn btn-soft btn-sm" type="button" data-action="download-review" data-week="${esc(statsReview.expiring.weekKey)}">Unduh sekarang</button></div>`
+      : '';
+    const reviewCard = statsReview.latest
+      ? `<section class="card review-teaser">
+          ${UI.section('Evaluasi mingguan', `Laporan terbaru · ${esc(statsReview.latest.isoWeek)}`, `<a class="link-btn" href="#/evaluasi">Buka evaluasi</a>`)}
+          <div class="review-teaser-body">
+            <strong class="review-score">${statsReview.latest.score}%</strong>
+            <span>${statsReview.latest.done}/${statsReview.latest.total} aktivitas selesai · sisa ${statsReview.latest.daysLeft} hari</span>
+            <button class="btn btn-soft btn-sm" type="button" data-action="download-review" data-week="${esc(statsReview.latest.weekKey)}">${UI.downloadIcon()} Unduh .md</button>
+          </div>
+        </section>`
+      : `<section class="card review-teaser">
+          ${UI.section('Evaluasi mingguan', 'Laporan pertama muncul Minggu 21.00')}
+          <p class="hint">Laporan disimpan selama 4 minggu terakhir, lalu dihapus otomatis. Unduh laporan yang ingin Anda simpan.</p>
+          <a class="btn btn-soft btn-sm" href="#/evaluasi">Lihat evaluasi</a>
+        </section>`;
 
     return `
       <div class="stack">
-        ${backupWarn}
+        ${backupWarn}${restAlert}${reviewWarn}
         <section class="hero-card tile-hero-lavender">
           <div class="hero-glow" aria-hidden="true"></div>
           <div class="hero-content">
@@ -186,6 +233,8 @@ const Pages = (() => {
           </div>
         </div>
 
+        ${reviewCard}
+
         <section class="card">
           ${UI.section('Aktivitas hari ini', `${done} dari ${acts.length} selesai`, `<button class="btn btn-ghost btn-sm" type="button" data-action="add-activity" data-day="${day}">${ic('plus', 16)} Tambah</button>`)}
           <ul class="task-list">${checklist}</ul>
@@ -263,6 +312,7 @@ const Pages = (() => {
         <div class="day-column-head">
           <div><strong>${esc(Utils.dayName(dayNum))}</strong><span>${d.getDate()} ${esc(Utils.MONTHS[d.getMonth()].slice(0, 3))}</span></div>
           ${UI.chip(`${p.done}/${p.total} selesai`, p.pct === 100 ? 'ok' : 'neutral')}
+          ${key === Utils.dateKey(new Date()) ? `<button class="btn-icon btn-icon-sm rest-day ${(S().restDays || []).includes(key) ? 'is-active' : ''}" type="button" data-action="toggle-rest-day" data-date="${key}" aria-pressed="${(S().restDays || []).includes(key)}" aria-label="Tandai hari istirahat" title="Maksimal 2 hari istirahat per minggu">${ic('lock', 16)}</button>` : ''}
         </div>
         <div class="target-mini"><span>${ic('target', 15)} Target akademik</span><p>${esc(Store.targetForDay(dayNum))}</p></div>
         <div class="timeline">${rows}</div>
@@ -285,7 +335,7 @@ const Pages = (() => {
         <p class="hint search-empty" data-search-empty hidden>Tidak ada aktivitas yang cocok.</p>
         <div class="day-strip" role="group" aria-label="Pilih hari">${strip}</div>
         <div class="week-grid">${columns}</div>
-        <p class="hint">Status tersimpan per tanggal. Aktivitas yang lewat waktu tidak otomatis dianggap selesai. Ubah jadwal Subuh dan blok lainnya melalui Pengaturan atau langsung dari daftar aktivitas.</p>
+        <p class="hint">Penandaan hanya bisa dilakukan saat jendela aktivitas terbuka, dengan toleransi 10 menit setelahnya. Aktivitas 20 menit ke atas memakai dua langkah: Mulai lalu Selesai. Aturan berlaku mulai Senin setelah pembaruan ini; tanggal sebelumnya tetap memakai cara lama. Maksimal 2 hari istirahat per minggu.</p>
       </div>`;
   }
 
@@ -311,7 +361,7 @@ const Pages = (() => {
         const group = [];
         while (i < acts.length && acts[i].block === a.block) group.push(acts[i++]);
         const done = group.filter((x) => Store.activityStatus(x, Utils.fromKey(dateKeyStr)) === 'completed').length;
-        const open = group.some((x) => Store.activityStatus(x, Utils.fromKey(dateKeyStr)) === 'ongoing') ? ' open' : '';
+        const open = group.some((x) => ['ongoing', 'inprogress'].includes(Store.activityStatus(x, Utils.fromKey(dateKeyStr)))) ? ' open' : '';
         out.push(`<details class="routine-group"${open}>
           <summary><strong>${esc(a.blockLabel || a.block)}</strong> · ${group.length} aktivitas · ${esc(Utils.fmtTime(group[0].startTime))}–${esc(Utils.fmtTime(group[group.length - 1].endTime))}
           <span class="badge badge-ok">${done}/${group.length}</span></summary>
@@ -328,8 +378,8 @@ const Pages = (() => {
 
   function activityRow(a, dateKeyStr) {
     const status = Store.activityStatus(a, Utils.fromKey(dateKeyStr) || new Date());
-    return `<article class="activity-item status-${status}">
-      <button class="check" type="button" data-action="toggle-activity" data-id="${esc(a.id)}" data-date="${dateKeyStr}" aria-label="Tandai selesai: ${esc(a.title)}" aria-pressed="${status === 'completed'}">${UI.checkIcon(status === 'completed')}</button>
+    return `<article class="activity-item status-${status}" data-activity-id="${esc(a.id)}">
+      ${activityControl(a, dateKeyStr)}
       <div class="activity-info">
         <div class="activity-time">${esc(Utils.fmtTime(a.startTime))} – ${esc(Utils.fmtTime(a.endTime))}</div>
         <strong>${esc(a.title)}</strong>
@@ -373,6 +423,35 @@ const Pages = (() => {
     return (location.hash || '').replace(/^#\/?/, '').split('?')[0] === 'jadwal';
   }
 
+  /** F-11: perbarui atribut/status saja; <details> yang terbuka tidak ikut tertutup. */
+  function refreshLiveStates() {
+    const page = (location.hash || '').replace(/^#\/?/, '').split('?')[0] || 'dashboard';
+    if (!['dashboard', 'jadwal'].includes(page)) return;
+    const tpl = document.createElement('template');
+    document.querySelectorAll('[data-action="toggle-activity"]').forEach((btn) => {
+      const a = S().activities.find((x) => x.id === btn.dataset.id);
+      if (!a) return;
+      const key = btn.dataset.date;
+      tpl.innerHTML = activityControl(a, key, btn.classList.contains('check-sm')).trim();
+      const fresh = tpl.content.firstElementChild;
+      if (!fresh) return;
+      ['aria-label', 'aria-pressed', 'aria-disabled', 'title', 'data-reason'].forEach((attr) => {
+        const value = fresh.getAttribute(attr);
+        if (value == null) btn.removeAttribute(attr); else btn.setAttribute(attr, value);
+      });
+      btn.classList.toggle('is-locked', fresh.classList.contains('is-locked'));
+      btn.classList.toggle('is-running', fresh.classList.contains('is-running'));
+      if (btn.innerHTML !== fresh.innerHTML) btn.innerHTML = fresh.innerHTML;
+      const item = btn.closest('.activity-item, .task-row');
+      if (!item) return;
+      const status = Store.activityStatus(a, Utils.fromKey(key));
+      item.classList.remove('status-upcoming', 'status-ongoing', 'status-missed', 'status-completed', 'status-skipped', 'status-inprogress', 'status-excused');
+      item.classList.add('status-' + status);
+      const badge = item.querySelector('.badge');
+      if (badge) badge.outerHTML = UI.badge(status);
+    });
+  }
+
   /* CONNECTEDNESS: empat langkah belanja disatukan oleh satu garis. */
   function shoppingStepper(items) {
     const mainItems = items.filter((i) => i.session === 'main');
@@ -398,6 +477,119 @@ const Pages = (() => {
         <span class="stepper-dot" aria-hidden="true">${s.state === 'done' ? ic('check', 11) : ''}</span>
         <span>${esc(s.label)}</span>
       </div>`).join('')}
+    </div>`;
+  }
+
+  /* ========================= EVALUASI MINGGUAN ======================== */
+  const EVAL_NOTES = 'Laporan evaluasi disimpan selama 4 minggu terakhir, lalu dihapus otomatis. Unduh laporan yang ingin Anda simpan.';
+
+  function reviewBadge(r) {
+    const parts = [];
+    parts.push(r.expired ? 'Kedaluwarsa · dihapus setelah dibuka' : r.daysLeft <= 1 ? 'Dihapus Senin 09.00' : `Tersisa ${r.daysLeft} hari`);
+    parts.push(r.downloadedAt ? 'Sudah diunduh ✓' : 'Belum diunduh');
+    return UI.chip(parts.join(' · '), r.expired ? 'danger' : r.daysLeft <= 1 ? 'warn' : r.downloadedAt ? 'ok' : 'neutral');
+  }
+
+  function evalBars(daily) {
+    const bars = daily.map((d) => {
+      const h = Math.max(4, d.pct);
+      return `<div class="eval-bar-wrap" title="${esc(`${d.label}: ${d.done}/${d.total} (${d.pct}%)`)}">
+        <div class="eval-bar-track"><span class="eval-bar-fill" style="height:${h}%"></span></div>
+        <strong>${d.pct}%</strong><span>${esc(d.label)}</span>
+      </div>`;
+    }).join('');
+    const label = daily.map((d) => `${d.label} ${d.pct}%`).join(', ');
+    return `<div class="eval-bars" role="img" aria-label="Progres harian: ${esc(label)}">${bars}</div>`;
+  }
+
+  function evaluasi() {
+    const now = new Date();
+    const list = Store.reviewList(now);
+    const key = evalWeek && list.some((r) => r.weekKey === evalWeek) ? evalWeek : (list[0] && list[0].weekKey) || '';
+    if (!key) {
+      return `<div class="stack">
+        ${UI.pageHead('Evaluasi Mingguan', 'Evaluasi', 'Ringkasan otomatis dari aktivitas yang belum terselesaikan.')}
+        <div class="alert alert-info" role="status">${ic('info', 18)} <span>${EVAL_NOTES}</span></div>
+        ${UI.empty('chart', 'Belum ada laporan', 'Laporan pertama dibuat Minggu pukul 21.00, lalu diperbarui Senin pukul 09.00.')}
+        <a class="btn btn-soft" href="#/jadwal">Lihat jadwal mingguan</a>
+      </div>`;
+    }
+    const r = Store.reviewFor(key, now);
+    if (!r) return '<div class="stack"></div>';
+    if (!r.seen) Store.markReviewSeen(key, true); // D.6: buka sekali → laporan kedaluwarsa boleh dihapus.
+    const tabs = [
+      { key: 'ringkasan', label: 'Ringkasan', icon: 'chart' },
+      { key: 'rencana', label: 'Rencana', icon: 'target' },
+      { key: 'riwayat', label: 'Riwayat', icon: 'history' }
+    ].map((t) => `<button class="subtab ${evalTab === t.key ? 'is-active' : ''}" type="button" role="tab" aria-selected="${evalTab === t.key}" data-action="eval-tab" data-tab="${t.key}">${ic(t.icon, 16)} ${t.label}</button>`).join('');
+    const head = `${UI.pageHead('Evaluasi Mingguan', 'Evaluasi', `Laporan ${esc(r.isoWeek)} · ${esc(Utils.formatDate(Utils.fromKey(r.weekKey), { short: true }))} – ${esc(Utils.formatDate(Utils.addDays(Utils.fromKey(r.weekKey), 6), { short: true }))}`, `
+        <button class="btn btn-soft btn-sm" type="button" data-action="share-review" data-week="${esc(key)}">${ic('share', 16)} Bagikan</button>
+        <button class="btn btn-primary btn-sm" type="button" data-action="download-review" data-week="${esc(key)}">${UI.downloadIcon()} Unduh .md</button>`)}
+      <div class="alert alert-info review-retention" role="note">${ic('info', 18)} <span>${EVAL_NOTES}</span></div>
+      <div class="subtabs" role="tablist" aria-label="Bagian evaluasi">${tabs}</div>`;
+
+    if (evalTab === 'rencana') {
+      const rows = r.plan.length ? r.plan.map((p, i) => `<li class="plan-decision ${p.accepted ? 'is-accepted' : p.skipped ? 'is-skipped' : ''}">
+        <span class="plan-index">${i + 1}</span>
+        <div class="plan-main"><strong>${esc(p.title)}</strong><small>${esc(Utils.dayName(Utils.dow(Utils.fromKey(p.date)), true))} · ${esc(p.time || '-')} — ${esc(p.action)}</small></div>
+        ${p.accepted || p.skipped
+          ? UI.chip(p.accepted ? 'Diterima' : 'Dilewati', p.accepted ? 'ok' : 'neutral')
+          : `<div class="plan-buttons">
+              <button class="btn btn-soft btn-sm" type="button" data-action="plan-accept" data-week="${esc(key)}" data-id="${esc(p.id)}">Terima</button>
+              <button class="btn btn-ghost btn-sm" type="button" data-action="plan-skip" data-week="${esc(key)}" data-id="${esc(p.id)}">Lewati</button>
+            </div>`}
+      </li>`).join('') : UI.empty('target', 'Tidak ada rencana', 'Semua aktivitas minggu ini sudah tertangani.');
+      return `<div class="stack">${head}
+        <section class="card">${UI.section('Rencana pemulihan', 'Maksimal 5 tindakan dari aktivitas yang belum selesai')}
+          <ul class="plan-decisions">${rows}</ul>
+        </section>
+      </div>`;
+    }
+
+    if (evalTab === 'riwayat') {
+      const rows = list.map((item) => `<li class="review-history-item ${item.weekKey === key ? 'is-selected' : ''}">
+        <div class="review-history-main"><strong>${esc(item.isoWeek)}</strong><small>${item.done}/${item.total} selesai · skor ${item.score}%</small>${reviewBadge(item)}</div>
+        <div class="review-history-actions">
+          <button class="btn btn-soft btn-sm" type="button" data-action="eval-open" data-week="${esc(item.weekKey)}">Buka</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="download-review" data-week="${esc(item.weekKey)}">${UI.downloadIcon()} Unduh</button>
+        </div>
+      </li>`).join('');
+      return `<div class="stack">${head}
+        <section class="card">${UI.section('Riwayat laporan', 'Empat laporan terbaru', `<button class="btn btn-soft btn-sm" type="button" data-action="download-all-reviews">${UI.downloadIcon()} Unduh semua</button>`)}
+          <ul class="review-history">${rows}</ul>
+        </section>
+      </div>`;
+    }
+
+    const insights = r.insights.length
+      ? `<ol class="insight-list">${r.insights.map((i) => `<li><strong>${esc(i.title)}</strong><span>${esc(i.detail)}</span></li>`).join('')}</ol>`
+      : UI.empty('chart', 'Belum ada insight', 'Insight muncul setelah ada aktivitas yang tercatat.');
+    const unfinished = r.items.length
+      ? `<ul class="review-items">${r.items.map((i) => `<li><span>${esc(Utils.dayName(Utils.dow(Utils.fromKey(i.date)), true))} · ${esc(i.time || '-')}</span><strong>${esc(i.title)}</strong><em>${esc(i.reason)}</em></li>`).join('')}</ul>`
+      : '<p class="hint">Semua aktivitas minggu ini selesai.</p>';
+    const skipped = r.skippedItems.length
+      ? `<p class="hint">Sengaja dilewati (tidak masuk perhitungan skor): ${r.skippedItems.map((i) => esc(i.title)).join(', ')}.</p>`
+      : '';
+    return `<div class="stack">${head}
+      <section class="card">
+        <div class="review-summary">
+          ${UI.ring(r.score, 'Skor minggu ini', `${r.done}/${r.total} selesai`)}
+          <div class="review-summary-body">
+            <div class="bento-pill-row">
+              ${UI.chip(`${r.done} selesai`, 'ok')}${UI.chip(`${r.unfinished} belum`, 'warn')}${UI.chip(`${r.skippedCount} dilewati`, 'neutral')}${UI.chip(`${r.excusedCount} istirahat`, 'neutral')}
+            </div>
+            ${reviewBadge(r)}
+            <p class="hint">${r.status === 'preview' ? 'Pratinjau Minggu 21.00; angka final dibuat Senin 09.00.' : 'Snapshot final Senin 09.00. Riwayat centang tidak ikut dihapus.'}</p>
+          </div>
+        </div>
+        ${evalBars(r.daily)}
+      </section>
+      <section class="card">${UI.section('Insight', 'Maksimal tiga catatan penting')}${insights}</section>
+      <section class="card">${UI.section('Yang belum selesai', 'Bahan evaluasi minggu ini')}${unfinished}${skipped}</section>
+      <section class="card">
+        ${UI.section('Rencana pemulihan', `${r.plan.filter((p) => p.accepted).length} dari ${r.plan.length} diterima`, `<button class="btn btn-soft btn-sm" type="button" data-action="eval-goto-plan">Atur rencana</button>`)}
+        <p class="hint">${r.plan.map((p) => `${p.accepted ? '✓' : p.skipped ? '–' : '·'} ${p.title}`).join(' · ') || 'Tidak ada rencana.'}</p>
+      </section>
     </div>`;
   }
 
@@ -440,7 +632,7 @@ const Pages = (() => {
 
         <section class="card thesis-hero">
           <span class="eyebrow">Topik skripsi</span>
-          <h3>${esc(s.settings.thesisTopic)}</h3>
+          <p class="thesis-topic">${esc(s.settings.thesisTopic || 'Topik belum diisi. Tambahkan melalui Pengaturan.')}</p>
           <div class="thesis-grid">
             <div><span>Tahap saat ini</span><strong>${esc(current ? current.title : 'Belum ada yang dikerjakan')}</strong></div>
             <div><span>Target seminar proposal</span><strong>${seminar ? esc(Utils.formatDate(seminar, { short: true })) : 'Belum ditentukan'}</strong></div>
@@ -555,7 +747,7 @@ const Pages = (() => {
           <div class="fruit-summary">
             ${UI.ring(Math.min(100, (servings / target) * 100), 'Hari ini', `${servings}/${target} porsi`)}
             <div class="fruit-summary-body">
-              <h3>${servings >= target ? 'Target hari ini tercapai' : `Butuh ${target - servings} porsi lagi`}</h3>
+              <p class="fruit-summary-title">${servings >= target ? 'Target hari ini tercapai' : `Butuh ${target - servings} porsi lagi`}</p>
               <p>Pencatatan konsumsi dapat mengurangi stok yang terkait otomatis.</p>
               <div class="week-strip">${weekStrip}</div>
             </div>
@@ -691,7 +883,8 @@ const Pages = (() => {
       f('Mulai persiapan kerja', 'workStartTime', { type: 'time', value: Utils.fmtTimeColon(s.settings.workStartTime) }),
       f('Durasi perjalanan (menit)', 'commuteMinutes', { type: 'number', min: 0, value: s.settings.commuteMinutes }),
       f('Selesai kerja', 'workEndTime', { type: 'time', value: Utils.fmtTimeColon(s.settings.workEndTime) }),
-      f('Selesai lembur Jumat', 'overtimeEndTime', { type: 'time', value: Utils.fmtTimeColon(s.settings.overtimeEndTime) })
+      f('Selesai lembur Jumat', 'overtimeEndTime', { type: 'time', value: Utils.fmtTimeColon(s.settings.overtimeEndTime) }),
+      f('Toleransi setelah jendela (menit)', 'markGraceMinutes', { type: 'number', min: 0, max: 30, value: s.settings.markGraceMinutes, full: true, help: '0–30 menit. Berlaku untuk tanggal mulai Senin setelah pembaruan; tanggal lama memakai aturan sebelumnya.' })
     ]);
 
     const dayOpts = [1, 2, 3, 4, 5, 6, 7].map((d) => ({ value: d, label: Utils.dayName(d) }));
@@ -709,6 +902,7 @@ const Pages = (() => {
       f(`Pengingat belanja ${Utils.dayName(s.settings.shoppingDays.main, true)} & ${Utils.dayName(s.settings.shoppingDays.refill, true)}`, 'notifShopping', { type: 'checkbox', checked: n.shopping }),
       f('Peringatan stok perlu dikonsumsi', 'notifLowStock', { type: 'checkbox', checked: n.lowStock }),
       f('Pengingat persiapan tidur', 'notifBedtime', { type: 'checkbox', checked: n.bedtime }),
+      f('Pengingat evaluasi mingguan', 'notifReview', { type: 'checkbox', checked: n.review, help: 'Pratinjau Minggu 21.00 dan laporan final Senin 09.00.' }),
       f('Waktu sebelum aktivitas (menit)', 'activityLeadMinutes', { type: 'number', min: 0, max: 60, value: n.activityLeadMinutes })
     ]);
 
@@ -1065,8 +1259,77 @@ const Pages = (() => {
   const Actions = {
     'toggle-activity'(el) {
       const id = el.dataset.id, date = el.dataset.date;
-      const rec = S().completion[date] || {};
-      Store.setActivityStatus(id, date, rec[id] === 'completed' ? '' : 'completed');
+      const a = S().activities.find((x) => x.id === id);
+      if (!a) return;
+      const raw = Store.statusOf((S().completion[date] || {})[id]);
+      const win = Store.windowFor(a, date, new Date(), S());
+      const next = (raw === 'completed' || raw === 'skipped' || raw === 'excused') ? ''
+        : (win.long && raw !== 'inprogress' ? 'inprogress' : 'completed');
+      const res = Store.setActivityStatus(id, date, next);
+      if (!res.ok) { UI.toast(res.reason || 'Penandaan tidak bisa dilakukan.', 'info'); return; }
+      if (next === 'inprogress') UI.toast('Aktivitas dimulai. Tekan lagi untuk menyelesaikan.', 'info');
+    },
+    'activity-undo'(el) {
+      const res = Store.setActivityStatus(el.dataset.id, el.dataset.date, '');
+      if (!res.ok) UI.toast(res.reason || 'Penandaan tidak bisa dibatalkan.', 'info');
+    },
+    async 'toggle-rest-day'(el) {
+      const key = el.dataset.date;
+      const on = !(S().restDays || []).includes(key);
+      if (on) {
+        const ok = await UI.confirm('Tandai hari istirahat?', 'Aktivitas hari ini dikecualikan dari skor mingguan. Maksimal 2 hari istirahat per minggu.', 'Tandai');
+        if (!ok) return;
+      }
+      const res = Store.setRestDay(key, on);
+      if (!res.ok) { UI.toast(res.reason || 'Hari istirahat tidak bisa dicatat.', 'info'); return; }
+      UI.toast(on ? 'Hari istirahat dicatat.' : 'Hari istirahat dibatalkan.');
+    },
+
+    'eval-tab'(el) { evalTab = el.dataset.tab; document.dispatchEvent(new CustomEvent('app:force-render')); },
+    'eval-open'(el) { evalWeek = el.dataset.week; evalTab = 'ringkasan'; document.dispatchEvent(new CustomEvent('app:force-render')); },
+    'eval-goto-plan'() { evalTab = 'rencana'; document.dispatchEvent(new CustomEvent('app:force-render')); },
+    'plan-accept'(el) {
+      Store.setPlanDecision(el.dataset.week, [el.dataset.id], true);
+      UI.toast('Rencana diterima.');
+    },
+    'plan-skip'(el) {
+      Store.setPlanDecision(el.dataset.week, [el.dataset.id], false);
+      UI.toast('Rencana dilewati.', 'info');
+    },
+    'download-review'(el) {
+      const key = el.dataset.week;
+      const md = Store.reviewMarkdown(key);
+      if (!md) { UI.toast('Laporan tidak ditemukan.', 'error'); return; }
+      Utils.downloadFile(Store.reviewFileName(key), md, 'text/markdown;charset=utf-8');
+      Store.markReviewDownloaded(key, 'md');
+      UI.toast('Laporan evaluasi diunduh.');
+    },
+    'download-all-reviews'() {
+      const list = Store.reviewList();
+      if (!list.length) { UI.toast('Belum ada laporan.', 'info'); return; }
+      const all = list.map((r) => Store.reviewMarkdown(r.weekKey)).filter(Boolean).join('\n\n---\n\n');
+      Utils.downloadFile(`evaluasi-mingguan-semua_${Utils.fileDate(new Date())}.md`, all, 'text/markdown;charset=utf-8');
+      list.forEach((r) => Store.markReviewDownloaded(r.weekKey, 'md'));
+      UI.toast(`${list.length} laporan diunduh dalam satu berkas.`);
+    },
+    async 'share-review'(el) {
+      const r = Store.reviewFor(el.dataset.week);
+      if (!r) return;
+      const text = Store.reviewMarkdown(el.dataset.week);
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: `Evaluasi Mingguan ${r.isoWeek}`, text: text.slice(0, 2000) });
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        UI.toast('Laporan disalin ke papan klip.');
+      } catch {
+        UI.toast('Bagikan tidak tersedia. Gunakan tombol Unduh .md.', 'info');
+      }
     },
     'add-activity'(el) { openActivityModal(null, Number(el.dataset.day)); },
     'edit-activity'(el) { openActivityModal(S().activities.find((a) => a.id === el.dataset.id)); },
@@ -1130,8 +1393,8 @@ const Pages = (() => {
     'task-up'(el) { moveTask(el.dataset.id, -1); },
     'task-down'(el) { moveTask(el.dataset.id, 1); },
     'save-mentor-notes'() {
-      const v = document.getElementById('mentor-notes').value;
-      Store.update((s) => { s.mentorshipNotes = v; });
+      const el = document.getElementById('mentor-notes');
+      Store.saveMentorNotes(el ? el.value : '');
       UI.toast('Catatan bimbingan disimpan.');
     },
     'edit-seminar'() { openSeminarModal(); },
@@ -1264,12 +1527,9 @@ const Pages = (() => {
       );
       if (!ok) return;
       saveSettings(true);
-      Store.update((state) => {
-        const fresh = Seed.buildActivities(state.settings);
-        const keep = state.activities.filter((a) => !a.isTemplate || a.userEdited || deleted.has(a.id));
-        state.activities = fresh.filter((a) => !deleted.has(a.id)).concat(keep);
-      });
-      UI.toast(`Template diterapkan. ${skipped} aktivitas dilewati.`);
+      // R-02: satu jalur dengan invarian ID unik di Store, bukan concat mentah.
+      const result = Store.applyTemplate();
+      UI.toast(`Template diterapkan. ${result.skipped} aktivitas dilewati.`);
     },
     async 'request-notif'() {
       if (!('Notification' in window)) { UI.toast('Browser ini tidak mendukung notifikasi.', 'error'); return; }
@@ -1289,7 +1549,7 @@ const Pages = (() => {
     'export-ics'() { exportICS(); }, // N-01.2: pengingat kalender tanpa tab terbuka
     'import-trigger'() { document.getElementById('import-file').click(); },
     async 'reset-data'() {
-      const ok = await UI.confirm('Kembalikan data awal?', 'Seluruh aktivitas, catatan, stok, dan riwayat akan diganti dengan data bawaan. Ekspor data terlebih dahulu jika ingin menyimpannya.', 'Ya, kembalikan');
+      const ok = await UI.confirm('Kembalikan data awal?', 'Seluruh aktivitas, catatan, stok, riwayat, dan laporan evaluasi akan diganti dengan data bawaan. Ekspor data terlebih dahulu jika ingin menyimpannya.', 'Ya, kembalikan');
       if (!ok) return;
       Store.reset();
       document.dispatchEvent(new CustomEvent('app:force-render'));
@@ -1337,10 +1597,12 @@ const Pages = (() => {
       st.commuteMinutes = Number(d.get('commuteMinutes')) || 0;
       st.workEndTime = d.get('workEndTime') || '17.00';
       st.overtimeEndTime = d.get('overtimeEndTime') || '21.00';
+      st.markGraceMinutes = Utils.clamp(Number(d.get('markGraceMinutes') ?? 10), 0, 30);
       st.shoppingDays = { main: Number(d.get('shoppingDayMain')) || 7, refill: Number(d.get('shoppingDayRefill')) || 3 };
       st.notifications = {
         enabled: bool('notifEnabled'), activity: bool('notifActivity'), fruit: bool('notifFruit'),
         shopping: bool('notifShopping'), lowStock: bool('notifLowStock'), bedtime: bool('notifBedtime'),
+        review: bool('notifReview'),
         activityLeadMinutes: Utils.clamp(Number(d.get('activityLeadMinutes')) || 0, 0, 60),
         shoppingTimeMain: d.get('shoppingTimeMain') || '09.00',
         shoppingTimeRefill: d.get('shoppingTimeRefill') || '09.00'
@@ -1472,16 +1734,36 @@ const Pages = (() => {
         'END:VEVENT'
       );
     });
+    // D.2: dua pengingat evaluasi tetap jalan walau aplikasi tidak dibuka.
+    const reviewDate = week[0]; // Senin minggu berjalan
+    const reviewEvents = [
+      { uid: 'review-preview', date: Utils.addDays(reviewDate, 6), minute: 21 * 60, byday: 'SU', title: 'Pratinjau evaluasi mingguan', desc: 'Minggu 21.00 — buka Evaluasi untuk melihat pratinjau.' },
+      { uid: 'review-final', date: Utils.addDays(reviewDate, 7), minute: 9 * 60, byday: 'MO', title: 'Laporan evaluasi mingguan', desc: 'Senin 09.00 — laporan final siap dibuka atau diunduh.' }
+    ];
+    reviewEvents.forEach((e) => {
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${e.uid}@rutin-buah`,
+        `DTSTAMP:${stamp(new Date())}`,
+        `DTSTART;TZID=Asia/Jakarta:${local(e.date, e.minute)}`,
+        `DTEND;TZID=Asia/Jakarta:${local(e.date, e.minute + 15)}`,
+        `SUMMARY:${icsEsc(e.title)}`,
+        `DESCRIPTION:${icsEsc(e.desc)}`,
+        `RRULE:FREQ=WEEKLY;BYDAY=${e.byday}`,
+        'BEGIN:VALARM', 'TRIGGER:PT0M', 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(e.title)}`, 'END:VALARM',
+        'END:VEVENT'
+      );
+    });
     lines.push('END:VCALENDAR');
     Utils.downloadFile('rutin-buah-jadwal.ics', lines.map(fold).join('\r\n') + '\r\n', 'text/calendar;charset=utf-8');
     UI.toast('Jadwal kalender diekspor.');
   }
 
   return {
-    dashboard, jadwal, skripsi, buah, belanja, pengaturan,
+    dashboard, jadwal, evaluasi, skripsi, buah, belanja, pengaturan,
     Actions, openActivityModal, openConsumeModal, openStockModal, openShopModal, openTaskModal,
     saveSettings, updateNotifStatus, exportMarkdown, exportICS, refreshShoppingTotals,
     setViewDate: (d) => { viewDate = new Date(d); },
-    getViewDate: () => viewDate, filterActivities, afterRender
+    getViewDate: () => viewDate, filterActivities, afterRender, refreshLiveStates
   };
 })();

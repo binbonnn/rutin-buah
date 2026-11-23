@@ -2,6 +2,37 @@
 
 Semua perubahan Signifikan dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/); proyek ini belum memakai Semantic Versioning secara ketat.
 
+## [1.2.0] — 2026-11-23
+
+Remediasi hasil audit kedua (`AUDIT-V2-dan-Saran-Evaluasi-Mingguan.md`) sekaligus Fase 0–3: Jendela Aktif, Evaluasi Mingguan, dan otomasi pengujian. Skema data naik ke **3**.
+
+**Perbaikan regresi audit**
+- R-01: input `#import-file` kini permanen di `index.html`; tombol "Impor" hanya memicu picker, sehingga alur impor tidak lagi bergantung pada halaman Pengaturan.
+- R-02: "Terapkan template" memakai `Store.applyTemplate()` dengan ID unik; duplikat lama dibongkar saat normalisasi/migrasi dan edit pengguna tetap diprioritaskan.
+- N-02: autosave catatan bimbingan lewat `Store.saveMentorNotes()`; `update()` mengosongkan antrean `persistSoon()` lebih dulu, ditambah flush saat blur, `visibilitychange`, dan `pagehide`.
+- D-05: laporan evaluasi kedaluwarsa yang belum dibuka ditahan tampil; setelah dibuka (`seen`) langsung dihapus, dan tidak ikut diimpor kembali.
+- N-01: notifikasi buka/tutup jendela dan pratinjau/final evaluasi; ICS kini memuat dua VEVENT mingguan ber-`VALARM` (Minggu 21.00 dan Senin 09.00).
+- N-03: `h3` pada topik skripsi dan ringkasan buah diganti elemen teks agar hierarki heading tidak meloncat.
+- F-11: interval 60 detik dan `visibilitychange` memperbarui atribut/status lewat `Pages.refreshLiveStates()`, bukan render ulang penuh.
+- V-09: target sentuh `.check`, `.btn-icon-sm`, dan `.mini-input` jadi 44 px nyata; override desktop yang mengecilkan dihapus.
+
+**Jendela Aktif (mulai Senin setelah pembaruan)**
+- Penandaan hanya saat `opensAt ≤ now < lastTick`, dengan `lastTick = closesAt + grace`; grace default 10 menit (0–30 menit, diatur di Pengaturan).
+- Durasi 0 menit tetap menjadi item dengan jendela minimum 10 menit, dan template bawaan sudah diperbaiki.
+- Aktivitas ≥ 20 menit wajib dua langkah (`Mulai` → `Selesai`); dijaga baik di tombol maupun di `Store.canMark()`.
+- Hari istirahat maksimal 2 per minggu dan dikecualikan dari skor; tanggal sebelum `settings.strictSince` tetap memakai aturan lama (`src: 'legacy'`).
+
+**Evaluasi Mingguan**
+- Halaman baru **Evaluasi** dengan tab Ringkasan / Rencana / Riwayat: grafik 7 batang, maksimal 3 insight, dan rencana pemulihan maksimal 5 tindakan yang bisa diterima/dilewati.
+- Snapshot dibuat sekali per minggu (pratinjau Minggu 21.00, final Senin 09.00), idempoten, dengan catch-up maksimal 4 minggu.
+- Retensi **4 laporan final terbaru**; riwayat `completion` tidak ikut dibatasi. Laporan kedaluwarsa sudah dibuka dihapus otomatis.
+- Unduh Markdown `.md` per laporan atau "Unduh semua", plus Web Share dengan fallback papan klip. Tidak ada skor mini jangka panjang dan tidak ada format laporan JSON importable.
+- Service worker cache bump `rutin-buah-v30` → `rutin-buah-v32`.
+
+**Pengujian**
+- `tests/regression.test.js` + `tests/helpers.js`: 19 tes untuk R-01/R-02/N-02, boundary Jendela Aktif, anti-retroaktif, migrasi v2→v3, waktu pratinjau/final evaluasi, retensi, impor, ICS, target sentuh, dan pembaruan terarah.
+- `package.json` menyediakan `npm test` / `npm start`; `.github/workflows/test.yml` menjalankan `node --check`, validasi manifest, dan tes pada setiap push/PR ke `main`.
+
 ## [1.1.0] — 2026-11-23
 
 ### Remediasi audit 92 temuan (`AUDIT-Rutin-Buah.md`)

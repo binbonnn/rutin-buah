@@ -30,6 +30,9 @@ const Seed = (() => {
     seminarDate: '',
     thesisTopic: '', // X-04: judul pribadi pembuat dipindah ke onboarding pengguna
     shoppingDays: { main: 7, refill: 3 },
+    // C.10: rekomendasi dokumen — toleransi 10 menit dan aturan mulai Senin depan.
+    markGraceMinutes: 10,
+    strictSince: Utils.nextMondayKey(new Date()),
     notifications: {
       enabled: true,
       activity: true,
@@ -37,6 +40,7 @@ const Seed = (() => {
       shopping: true,
       lowStock: true,
       bedtime: false,
+      review: true,
       activityLeadMinutes: 10,
       shoppingTimeMain: '09.00',
       shoppingTimeRefill: '09.00'
@@ -123,6 +127,11 @@ const Seed = (() => {
     const f1 = parseTime(s.fruit1Time) ?? 510;
     const f2 = parseTime(s.fruit2Time) ?? 915;
     const bedtime = parseTime(s.bedtime) ?? 1260;
+    // N-01: titik jam makan/lembur diturunkan dari jadwal kerja, bukan angka ajaib.
+    const lunch = workStart + 180;
+    const dinner = workEnd + 75;
+    const fridayDinner = workEnd + 60;
+    const overtimeStart = workEnd + 90;
     const fruitTarget = Math.max(1, Math.min(6, Math.floor(numOf(s.dailyFruitTarget, 2))));
 
     /** Tambah blok; mulai paling cepat di `desired`, paling lambat di cursor sebelumnya. */
@@ -130,7 +139,8 @@ const Seed = (() => {
       const start = Math.max(0, Math.min(1439, Math.round(numOf(desiredStart, 0))));
       const dur = Math.max(0, Math.round(numOf(duration, 0)));
       const from = Math.max(start, cursor[d]);
-      const to = Math.min(1440, from + dur);
+      // N-01: blok penanda tidak boleh berdurasi 0 menit.
+      const to = Math.min(1440, from + (dur > 0 ? dur : 5));
       cursor[d] = to;
       acts.push({
         id: `tpl-${d}-${key}`, title, category, dayOfWeek: d,
@@ -147,7 +157,8 @@ const Seed = (() => {
       const start = Math.max(0, Math.min(1439, Math.round(numOf(desiredStart, 0))));
       const end = Math.max(start, Math.min(1440, Math.round(numOf(hardEnd, start))));
       const from = Math.max(start, cursor[d]);
-      const to = Math.max(from, end); // mundur ke cursor bila perlu, tapi tidak pernah negatif
+      // N-01: jaga durasi minimal 5 menit tanpa mengubah blok yang sudah valid.
+      const to = Math.min(1440, Math.max(from, end, from + 5));
       cursor[d] = to;
       acts.push({
         id: `tpl-${d}-${key}`, title, category, dayOfWeek: d,
@@ -184,15 +195,15 @@ const Seed = (() => {
         until(d, 'persiapan-akhir', 'Persiapan akhir sebelum kerja', 'Pribadi', cursor[d], workStart, '');
         seq(d, 'persiapan-kerja', 'Persiapan kerja dan berpakaian', 'Kerja', workStart, 30, 'Bukan mandi kedua; sudah mandi setelah olahraga pagi.');
         seq(d, 'berangkat', 'Perjalanan ke kantor', 'Kerja', null, commute, '');
-        seq(d, 'kerja-1', 'Bekerja', 'Kerja', null, Math.max(0, 720 - cursor[d]), '');
-        seq(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, '');
+        seq(d, 'kerja-1', 'Bekerja', 'Kerja', null, Math.max(0, lunch - cursor[d]), '');
+        seq(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', lunch, 60, '');
         seq(d, 'kerja-2', 'Bekerja', 'Kerja', null, Math.max(0, f2 - cursor[d]), '');
         seq(d, 'buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.');
         if (fruitTarget > 3) seq(d, 'buah-4', 'Buah porsi keempat', 'Makan', f2 + 45, 15, 'Target tambahan sesuai setelan.');
         seq(d, 'kerja-3', 'Bekerja', 'Kerja', null, Math.max(0, workEnd - cursor[d]), '');
         seq(d, 'pulang', 'Perjalanan pulang', 'Kerja', null, commute, '');
-        seq(d, 'istirahat', 'Istirahat', 'Pribadi', null, Math.max(0, 1095 - cursor[d]), '');
-        seq(d, 'makan-malam', 'Makan malam', 'Makan', 1095, 30, '');
+        seq(d, 'istirahat', 'Istirahat', 'Pribadi', null, Math.max(0, dinner - cursor[d]), '');
+        seq(d, 'makan-malam', 'Makan malam', 'Makan', dinner, 30, '');
         seq(d, 'skripsi-malam', 'Mengerjakan skripsi', 'Skripsi', null, 75, '');
         seq(d, 'membaca', 'Membaca buku', 'Membaca', null, 30, '');
         seq(d, 'persiapan-besok', 'Persiapan hari berikutnya', 'Pribadi', null, 15, '');
@@ -205,13 +216,13 @@ const Seed = (() => {
         until(d, 'persiapan-akhir', 'Persiapan akhir', 'Pribadi', cursor[d], workStart, '');
         seq(d, 'persiapan-kerja', 'Persiapan kerja', 'Kerja', workStart, 30, '');
         seq(d, 'berangkat', 'Perjalanan ke kantor', 'Kerja', null, commute, '');
-        seq(d, 'kerja-1', 'Bekerja', 'Kerja', null, Math.max(0, 720 - cursor[d]), '');
-        seq(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, '');
+        seq(d, 'kerja-1', 'Bekerja', 'Kerja', null, Math.max(0, lunch - cursor[d]), '');
+        seq(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', lunch, 60, '');
         seq(d, 'kerja-2', 'Bekerja', 'Kerja', null, Math.max(0, f2 - cursor[d]), '');
         seq(d, 'buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.');
-        seq(d, 'kerja-3', 'Bekerja', 'Kerja', null, Math.max(0, 1080 - cursor[d]), '');
-        seq(d, 'makan-malam', 'Makan malam / jeda makan', 'Makan', 1080, 30, '');
-        seq(d, 'lembur', 'Lembur', 'Kerja', 1110, Math.max(0, overtimeEnd - 1110), 'Tidak ada sesi skripsi atau membaca pada Jumat malam.');
+        seq(d, 'kerja-3', 'Bekerja', 'Kerja', null, Math.max(0, fridayDinner - cursor[d]), '');
+        seq(d, 'makan-malam', 'Makan malam / jeda makan', 'Makan', fridayDinner, 30, '');
+        seq(d, 'lembur', 'Lembur', 'Kerja', overtimeStart, Math.max(0, overtimeEnd - overtimeStart), 'Tidak ada sesi skripsi atau membaca pada Jumat malam.');
         seq(d, 'pulang', 'Perjalanan pulang', 'Kerja', null, 30, '');
         seq(d, 'bersih', 'Bersih-bersih dan persiapan tidur', 'Pribadi', null, 15, '');
         until(d, 'tidur', 'Tidur', 'Pribadi', cursor[d], bedtime, '');
@@ -224,13 +235,13 @@ const Seed = (() => {
               ['skripsi-2', 'Mengerjakan skripsi', 'Skripsi', null, 75, ''],
               ['istirahat-1', 'Istirahat', 'Pribadi', null, 15, ''],
               ['skripsi-3', 'Mengerjakan skripsi', 'Skripsi', null, 75, ''],
-              ['makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, ''],
+              ['makan-siang', 'Istirahat dan makan siang', 'Makan', lunch, 60, ''],
               ['ppt-1', 'Menyusun PowerPoint', 'Skripsi', null, 120, ''],
               ['istirahat-2', 'Istirahat', 'Pribadi', null, 15, ''],
               ['buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.'],
               ['ppt-2', 'Merapikan PowerPoint', 'Skripsi', null, 90, ''],
               ['bebas', 'Waktu bebas dan istirahat', 'Pribadi', null, 75, ''],
-              ['makan-malam', 'Makan malam', 'Makan', 1095, 30, ''],
+              ['makan-malam', 'Makan malam', 'Makan', dinner, 30, ''],
               ['evaluasi', 'Evaluasi skripsi', 'Skripsi', null, 60, ''],
               ['membaca', 'Membaca buku', 'Membaca', null, 30, ''],
               ['pribadi', 'Waktu pribadi', 'Pribadi', null, 30, ''],
@@ -243,13 +254,13 @@ const Seed = (() => {
               ['ppt-1', 'Mengerjakan PowerPoint', 'Skripsi', null, 75, ''],
               ['istirahat-1', 'Istirahat', 'Pribadi', null, 30, ''],
               ['latihan', 'Latihan presentasi', 'Skripsi', null, 90, ''],
-              ['makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, ''],
+              ['makan-siang', 'Istirahat dan makan siang', 'Makan', lunch, 60, ''],
               ['perbaikan', 'Perbaikan materi presentasi', 'Skripsi', null, 90, ''],
               ['bebas-1', 'Waktu bebas', 'Pribadi', null, 45, ''],
               ['buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.'],
               ['evaluasi', 'Evaluasi mingguan', 'Skripsi', null, 60, ''],
               ['pribadi', 'Waktu pribadi', 'Pribadi', null, 105, ''],
-              ['makan-malam', 'Makan malam', 'Makan', 1095, 30, ''],
+              ['makan-malam', 'Makan malam', 'Makan', dinner, 30, ''],
               ['persiapan-minggu', 'Persiapan minggu berikutnya', 'Skripsi', null, 45, ''],
               ['membaca', 'Membaca buku', 'Membaca', null, 30, ''],
               ['tenang', 'Waktu tenang', 'Pribadi', null, Math.max(0, bedtime - 1230), ''],
