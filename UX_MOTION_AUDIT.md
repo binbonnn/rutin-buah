@@ -4,8 +4,8 @@
 **Layar / flow:** Beranda · Jadwal Mingguan · Skripsi · Buah & Stok · Belanja · Pengaturan
 **Platform & stack:** Web mobile-first, HTML/CSS/JS vanilla, `localStorage` (`rutin-buah:v1`), service worker, `<dialog>` native. Tanpa build step.
 **Bahasa:** Bahasa Indonesia (konsisten di seluruh dokumen dan UI).
-**Tanggal audit:** 22 November 2026
-**Status implementasi:** ✅ Diterapkan penuh di kode, terverifikasi di browser (lihat Lampiran).
+**Tanggal audit:** 22 November 2026 · **Pembaruan remediasi:** 23 November 2026 (v1.1.0)
+**Status implementasi:** ✅ Diterapkan penuh di kode, terverifikasi di browser (lihat Lampiran 1–5). Prinsip 6 UX laws + 6 animated icons dipertahankan; perbaikan audit 92 temuan tidak mengubah pola Closure peek, Figure-Ground scrim, inline alerts, low keystrokes, satu garis stepper, 4–6 opsi, durasi morph 300–600 ms, maupun fallback reduced-motion.
 
 > Catatan pemetaan [ASUMSI]: tidak ada pemutar media di produk ini, sehingga ikon **01 Play/Pause** dari reels dipetakan ke **toggle checklist** (centang kosong ↔ centang penuh) — pasangan state biner yang paling sering disentuh pengguna. Ikon **06 Unlock** dipetakan ke **kunci anggaran belanja**.
 
@@ -619,7 +619,7 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 | Latar | `.bg-mesh` + `.studio-sunlight` (via `::before`) + 3 `.studio-bloom` (`#c4c0f5`, `#bce3cf`, `#f6c6b3`, blur 75px). |
 | Navigasi | Sidebar kiri 256px di desktop; drawer geser + backdrop di mobile. Pill aktif coral dengan badge ikon & anak panah `→`. |
 | Beranda | Hero lavender, 3 bento tile (lavender/mint/peach), action bar kristal, kartu ring multi-segment 4 busur, timeline "Berikutnya". |
-| Font | Plus Jakarta Sans 400–800 via Google Fonts, fallback Inter/system-ui. |
+| Font | Plus Jakarta Sans 400–800 via Google Fonts, fallback Inter/system-ui. **Sejak v1.1.0:** Google Fonts dihapus; stack font sistem dipakai agar offline & bebas permintaan pihak ketiga (lihat Lampiran 5). |
 | Tema | Terang adalah default (sesuai referensi); gelap tetap tersedia dengan geometri & token yang sama. |
 | Ikon PWA | Emblem multi-petal (coral/amber/violet/mint) di slab frosted, dihasilkan ulang oleh `scripts\generate-icons.js` (192/512 + maskable). |
 | Kompatibilitas | Semua `data-action`, `data-nav`, `data-goto`, dan state tersimpan tidak berubah. 6 ikon morph + 6 UX laws tetap aktif. |
@@ -658,3 +658,45 @@ UI.animateDownload(btn, run); // 650ms → run() → is-done 900ms → reset
 - `CACHE` dinaikkan ke `rutin-buah-v24`.
 
 **Verifikasi.** Simulasi halaman tergeser (`app-shell.y=-472`): sidebar `x=12,y=12`, backdrop `x=0,y=0`, `closeHit=path`, `navHit=SPAN`; Tutup / backdrop / Escape menutup drawer. Desktop 1280px: sidebar `position:static` berdampingan dengan main (`x=33`, `x=289`), `slab-glass` tetap `blur(28px)`, 0 overflow, 0 console error.
+
+---
+
+# LAMPIRAN 5 — Remediasi Audit 92 Temuan (v1.1.0, 23 November 2026)
+
+**Sumber:** `AUDIT-Rutin-Buah.md` (92 temuan, 7 High: D-01…D-04, F-01, N-01, V-01). Semua temuan High dan sisanya telah diterapkan; rincian perubahan ada di [`CHANGELOG.md`](CHANGELOG.md).
+
+## Dampak pada prinsip UX/motion
+
+| Prinsip | Status | Catatan |
+|---|---|---|
+| Closure peek | Utuh | `.day-strip` tetap flex + 4,3 chip + fade; tidak diubah oleh tab bar. |
+| Figure–Ground | Utuh | Scrim modal 68% + blur 6px, `<dialog>` native, scroll body dikunci. |
+| Inline alerts | Utuh | Budget, stok, dan cadangan lama memakai alert inline, bukan modal. |
+| Low keystrokes | Utuh | Autofill buah + datalist + tab bar 5 tujuan mengurangi ketukan. |
+| Satu garis stepper | Utuh | `shoppingStepper` tidak dipecah; save bar Pengaturan kini sticky. |
+| 4–6 opsi | Utuh | 8 kategori dibagi 6 + 2 "jarang" di akhir daftar. |
+| Morph 300–600 ms | Utuh | Ikon kirim 720 ms adalah pengecualian yang sudah didokumentasikan; theme transition 600 ms. |
+| Reduced motion | Utuh | `prefers-reduced-motion` memaksa durasi ≈0; ditambah `prefers-reduced-transparency`/`prefers-contrast` memakai permukaan solid. |
+
+## Perubahan struktural ringkas
+
+- **V-01 (High):** `.main { position: relative; z-index: 1; }` mengangkat konten statis di atas `.slab-glass` (z0). Tumpukan drawer tidak berubah: tab bar z30 < backdrop z70 < sidebar z80.
+- **V-04:** tab bar bawah ditambahkan di dalam `.app-shell` agar tetap di bawah scrim saat drawer terbuka; Pengaturan diakses lewat menu/header.
+- **U-01:** drawer tertutup `visibility:hidden` dan latar `inert`; fokus dikembalikan ke hamburger saat ditutup.
+- **U-02/U-10:** lantai 12 px (`--fs-xs`), target sentuh 44 px, teks koral gelap di tema terang / putih di koral `#c2410c` pada tema gelap.
+- **U-03/S-05:** tema sistem tanpa kilatan lewat `js/theme-init.js`; dua meta `theme-color`, manifest dengan `id`, `display_override`, orientasi `any`, ikon 180/monochrome, screenshots.
+- **N-01:** jendela waktu 10 menit + `visibilitychange`/`focus`, fallback SW timeout, ICS `VALARM`, klik notifikasi memfokus jendela existing. Web Push penuh masih menjadi batasan yang didokumentasikan.
+- **N-02:** `consume-soon` dihitung dari `purchaseDate` dan panduan lokasi simpan; status manual hanya mempercepat.
+- **S-01…S-06:** cache `rutin-buah-v30`, pre-cache atomik, cache-first tanpa refresh latar, timeout 3 detik, hanya respons `res.ok` yang di-cache, Google Fonts dihapus.
+- **X-02/X-03:** CSP + header keamanan (meta & server), server tahan URL cacat/traversal, 404 untuk aset hilang, dokumen internal tidak disajikan.
+
+## Verifikasi akhir
+
+- `node --check` semua JS (termasuk `theme-init.js`, `sw.js`, `serve.js`) dan `manifest.webmanifest` sebagai JSON valid.
+- Enam rute (Beranda, Jadwal, Skripsi, Buah, Belanja, Pengaturan) di desktop 1000 px dan simulasi viewport 390 px: `scrollWidth - clientWidth = 0`, 0 console error.
+- Drawer 390 px dengan transisi dinonaktifkan untuk pengukuran: sidebar `[12, 12, 290, 820]`, backdrop `[0, 0, 390, 844]`, `closeHit=ASIDE.sidebar`, `navHit=A.nav-item is-active`, area luar kena backdrop.
+- Ekspor JSON di bawah CSP menghasilkan berkas unduhan yang completed; `lastBackupAt` berubah menjadi "hari ini".
+- Pengujian D-07: cadangan 20 hari lalu memunculkan banner dashboard dan toast harian; N-02: stok pisang 10 hari di suhu ruang otomatis berlabel "Segera dikonsumsi".
+- Lighthouse (mode desktop): **Accessibility 1.00 · Best Practices 1.00 · SEO 1.00**, tanpa *audit failures*.
+- Server statis: `/%E0%A4%A` → 400, `/js/nope.js` → 404, traversal → 403, `/README.md` → 404, `/sw.js` & `/manifest.webmanifest` → 200 dengan CSP.
+

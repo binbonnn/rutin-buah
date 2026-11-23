@@ -2,9 +2,16 @@
 const Seed = (() => {
   const { parseTime, fmtTime, dow, dateKey, addDays } = Utils;
 
+  // F-06/Q-04: angka ajaib diturunkan dari blok, bukan ditanam di jadwal.
+  const num = (value, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
+  const nonNeg = (value, fallback) => Math.max(0, num(value, fallback));
+
   const settings = {
     name: '',
-    theme: 'light',
+    theme: 'system', // U-03: ikut sistem sampai pengguna memilih
     timezone: 'Asia/Jakarta',
     weeklyBudget: 50000,
     budgetLocked: false,
@@ -14,14 +21,14 @@ const Seed = (() => {
     walkMinutes: 40,
     workoutMinutes: 30,
     workStartTime: '09.00',
-    commuteMinutes: 30,
+    commuteMinutes: 0, // F-06: 0 berarti 0, bukan jatuh ke default 30
     workEndTime: '17.00',
     overtimeEndTime: '21.00',
     fruit1Time: '08.30',
     fruit2Time: '15.15',
     bedtime: '21.00',
     seminarDate: '',
-    thesisTopic: 'Usulan Perbaikan Sistem Kerja Menggunakan Pendekatan Macroergonomic Analysis and Design (MEAD) pada TPA BLE Banyumas.',
+    thesisTopic: '', // X-04: judul pribadi pembuat dipindah ke onboarding pengguna
     shoppingDays: { main: 7, refill: 3 },
     notifications: {
       enabled: true,
@@ -33,7 +40,8 @@ const Seed = (() => {
       activityLeadMinutes: 10,
       shoppingTimeMain: '09.00',
       shoppingTimeRefill: '09.00'
-    }
+    },
+    onboarded: false // V-16: tampilkan sambutan singkat pada kunjungan pertama
   };
 
   const fruitCatalog = [
@@ -69,146 +77,207 @@ const Seed = (() => {
     { key: 'pertanyaan', title: 'Menyiapkan kemungkinan pertanyaan penguji', description: 'Susun daftar pertanyaan dan jawaban singkat.', priority: 'low', status: 'todo', dueDate: '', notes: '' }
   ].map((t, i) => ({ id: 'task-' + t.key, ...t, order: i + 1, completedAt: '' }));
 
+  // D-02: template memakai ID stabil sebagai templateId; Store membuat ID unik per minggu.
   const shoppingTemplate = [
     { id: 'shop-jambu', fruitId: 'jambu', name: 'Jambu biji', quantity: 1, unit: '500 gram', estimatedUnitPrice: 9500, session: 'main' },
     { id: 'shop-pepaya', fruitId: 'pepaya', name: 'Pepaya', quantity: 1, unit: '1 kg utuh', estimatedUnitPrice: 15000, session: 'main' },
     { id: 'shop-jeruk', fruitId: 'jeruk', name: 'Jeruk', quantity: 3, unit: 'buah sedang', estimatedUnitPrice: 3750, session: 'main' },
     { id: 'shop-pisang', fruitId: 'pisang', name: 'Pisang', quantity: 2, unit: 'buah sedang', estimatedUnitPrice: 2500, session: 'main' },
     { id: 'shop-melon', fruitId: 'melon', name: 'Melon potong', quantity: 1, unit: '400 gram daging', estimatedUnitPrice: 7200, session: 'refill' }
-  ].map((i) => ({ ...i, actualUnitPrice: null, isPurchased: false, shoppingDate: '', storeNotes: '', weekKey: '' }));
+  ].map((i) => ({ ...i, templateId: i.id, actualUnitPrice: null, isPurchased: false, shoppingDate: '', storeNotes: '', weekKey: '' }));
 
-  const fruitSchedule = {
-    1: [{ fruitId: 'jambu', label: 'Jambu biji 150 g' }, { fruitId: 'pepaya', label: 'Pepaya 150 g' }],
-    2: [{ fruitId: 'jeruk', label: 'Jeruk 1 buah' }, { fruitId: 'jambu', label: 'Jambu biji 150 g' }],
-    3: [{ fruitId: 'pepaya', label: 'Pepaya 150 g' }, { fruitId: 'pisang', label: 'Pisang 1 buah' }],
-    4: [{ fruitId: 'jeruk', label: 'Jeruk 1 buah' }, { fruitId: 'pepaya', label: 'Pepaya 150 g' }],
-    5: [{ fruitId: 'jambu', label: 'Jambu biji 150 g' }, { fruitId: 'jeruk', label: 'Jeruk 1 buah' }],
-    6: [{ fruitId: 'pepaya', label: 'Pepaya 150 g' }, { fruitId: 'melon', label: 'Melon 150 g' }],
-    7: [{ fruitId: 'pisang', label: 'Pisang 1 buah' }, { fruitId: 'melon', label: 'Melon 150 g' }]
-  };
+  function fruitScheduleFor(s = settings) {
+    const target = Math.max(1, Math.min(6, Math.floor(num(s.dailyFruitTarget, 2))));
+    const days = {};
+    for (let d = 1; d <= 7; d++) {
+      const base = [
+        { fruitId: 'jambu', label: 'Jambu biji 150 g' },
+        { fruitId: 'pepaya', label: 'Pepaya 150 g' },
+        { fruitId: 'jeruk', label: 'Jeruk 1 buah' },
+        { fruitId: 'pisang', label: 'Pisang 1 buah' },
+        { fruitId: 'melon', label: 'Melon 150 g' }
+      ];
+      days[d] = Array.from({ length: target }, (_, i) => base[(d + i) % base.length]);
+    }
+    return days;
+  }
 
-  /** Bangun template aktivitas. ID stabil agar riwayat checklist tidak hilang saat template diperbarui. */
+  const fruitSchedule = fruitScheduleFor();
+
+  /**
+   * F-06: jadwal dibangun sebagai rangkaian blok berurutan.
+   * `cursor` hanya pernah maju, sehingga tidak ada tumpang tindih atau durasi negatif
+   * meski pengguna mengubah jam bangun, buah, atau tidur.
+   */
   function buildActivities(s = settings) {
     const acts = [];
-    const w = parseTime(s.wakeUpTime) ?? 240;
-    const subuhRaw = parseTime(s.subuhTime) ?? 250;
-    const walk = Math.max(5, Number(s.walkMinutes) || 40);
-    const workout = Math.max(5, Number(s.workoutMinutes) || 30);
+    const numOf = (v, fb) => num(v, fb);
+    const wake = parseTime(s.wakeUpTime) ?? 240;
+    const subuh = parseTime(s.subuhTime) ?? 250;
+    const walk = nonNeg(s.walkMinutes, 40);
+    const workout = nonNeg(s.workoutMinutes, 30);
     const workStart = parseTime(s.workStartTime) ?? 540;
-    const commute = Math.max(5, Number(s.commuteMinutes) || 30);
+    const commute = nonNeg(s.commuteMinutes, 0);
     const workEnd = parseTime(s.workEndTime) ?? 1020;
     const overtimeEnd = parseTime(s.overtimeEndTime) ?? 1260;
     const f1 = parseTime(s.fruit1Time) ?? 510;
     const f2 = parseTime(s.fruit2Time) ?? 915;
     const bedtime = parseTime(s.bedtime) ?? 1260;
+    const fruitTarget = Math.max(1, Math.min(6, Math.floor(numOf(s.dailyFruitTarget, 2))));
 
-    const add = (d, key, title, category, start, end, notes = '') => {
+    /** Tambah blok; mulai paling cepat di `desired`, paling lambat di cursor sebelumnya. */
+    const seq = (d, key, title, category, desiredStart, duration, notes = '', block = '') => {
+      const start = Math.max(0, Math.min(1439, Math.round(numOf(desiredStart, 0))));
+      const dur = Math.max(0, Math.round(numOf(duration, 0)));
+      const from = Math.max(start, cursor[d]);
+      const to = Math.min(1440, from + dur);
+      cursor[d] = to;
       acts.push({
         id: `tpl-${d}-${key}`, title, category, dayOfWeek: d,
-        startTime: fmtTime(start), endTime: fmtTime(end),
-        isRecurring: true, isTemplate: true, notes
+        startTime: fmtTime(from === 1440 ? 1439 : from),
+        endTime: fmtTime(to === 1440 ? 1439 : to),
+        isRecurring: true, isTemplate: true, notes,
+        ...(block ? { block, blockLabel: 'Rutinitas pagi' } : {})
       });
+      return from;
     };
 
-    // Rutinitas pagi harian (urutan olahraga sebelum mandi)
-    const subuhStart = Math.max(subuhRaw, w + 10);
-    const morning = [
-      ['bangun', 'Bangun, minum air, dan persiapan', 'Pribadi', w, w + 10, ''],
-      ['subuh', 'Salat Subuh dan ibadah singkat', 'Ibadah', subuhStart, subuhStart + 20, 'Waktu mengikuti salat setempat; dapat diubah.'],
-      ['pemanasan', 'Pemanasan', 'Olahraga', subuhStart + 20, subuhStart + 30, ''],
-      ['jalan', 'Jalan pagi', 'Olahraga', subuhStart + 30, subuhStart + 30 + walk, ''],
-      ['workout', 'Home workout', 'Olahraga', subuhStart + 30 + walk, subuhStart + 30 + walk + workout, ''],
-      ['pendinginan', 'Pendinginan', 'Olahraga', subuhStart + 30 + walk + workout, subuhStart + 40 + walk + workout, ''],
-      ['mandi', 'Mandi dan bersiap', 'Pribadi', subuhStart + 40 + walk + workout, subuhStart + 70 + walk + workout, 'Olahraga wajib selesai sebelum mandi.'],
-      ['sarapan', 'Sarapan', 'Makan', subuhStart + 70 + walk + workout, subuhStart + 100 + walk + workout, '']
-    ];
+    /** Tambah blok yang harus selesai tepat sebelum jam tertentu (mis. persiapan kerja). */
+    const until = (d, key, title, category, desiredStart, hardEnd, notes = '', block = '') => {
+      const start = Math.max(0, Math.min(1439, Math.round(numOf(desiredStart, 0))));
+      const end = Math.max(start, Math.min(1440, Math.round(numOf(hardEnd, start))));
+      const from = Math.max(start, cursor[d]);
+      const to = Math.max(from, end); // mundur ke cursor bila perlu, tapi tidak pernah negatif
+      cursor[d] = to;
+      acts.push({
+        id: `tpl-${d}-${key}`, title, category, dayOfWeek: d,
+        startTime: fmtTime(from), endTime: fmtTime(to === 1440 ? 1439 : to),
+        isRecurring: true, isTemplate: true, notes,
+        ...(block ? { block, blockLabel: 'Rutinitas pagi' } : {})
+      });
+      return from;
+    };
+
+    const cursor = {};
+    for (let d = 1; d <= 7; d++) cursor[d] = 0;
+
+    const fruitLabel = (n) => ['pertama', 'kedua', 'ketiga', 'keempat', 'kelima', 'keenam'][n - 1] || `ke-${n}`;
 
     for (let d = 1; d <= 7; d++) {
-      morning.forEach(([key, title, cat, start, end, notes]) => {
-        add(d, key, key === 'workout' ? `${title} — ${workoutFocus[d]}` : title, cat, start, end, notes);
-      });
+      // ---- Rutinitas pagi harian: satu rangkaian, dikelompokkan di UI (V-07) ----
+      const B = 'rutinitas-pagi';
+      seq(d, 'bangun', 'Bangun, minum air, dan persiapan', 'Pribadi', wake, 10, '', B);
+      const subuhStart = Math.max(subuh, wake + 10);
+      seq(d, 'subuh', 'Salat Subuh dan ibadah singkat', 'Ibadah', subuhStart, 20, 'Waktu mengikuti salat setempat; dapat diubah.', B);
+      seq(d, 'pemanasan', 'Pemanasan', 'Olahraga', null, 10, '', B);
+      seq(d, 'jalan', 'Jalan pagi', 'Olahraga', null, walk, '', B);
+      seq(d, 'workout', `Home workout — ${workoutFocus[d]}`, 'Olahraga', null, workout, 'Olahraga wajib selesai sebelum mandi.', B);
+      seq(d, 'pendinginan', 'Pendinginan', 'Olahraga', null, 10, '', B);
+      seq(d, 'mandi', 'Mandi dan bersiap', 'Pribadi', null, 30, '', B);
+      seq(d, 'sarapan', 'Sarapan', 'Makan', null, 30, '', B);
 
       if (d <= 4) {
-        // Senin -- Kamis
-        add(d, 'skripsi-pagi', 'Mengerjakan skripsi', 'Skripsi', 420, 510, academicTargets[d]);
-        add(d, 'buah-1', 'Buah porsi pertama', 'Makan', f1, f1 + 15, 'Target 1 porsi buah.');
-        add(d, 'persiapan-akhir', 'Persiapan akhir sebelum kerja', 'Pribadi', f1 + 15, workStart, '');
-        add(d, 'persiapan-kerja', 'Persiapan kerja dan berpakaian', 'Kerja', workStart, workStart + 30, 'Bukan mandi kedua; sudah mandi setelah olahraga pagi.');
-        add(d, 'berangkat', 'Perjalanan ke kantor', 'Kerja', workStart + 30, workStart + 30 + commute, '');
-        add(d, 'kerja-1', 'Bekerja', 'Kerja', workStart + 30 + commute, 720, '');
-        add(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 780, '');
-        add(d, 'kerja-2', 'Bekerja', 'Kerja', 780, 915, '');
-        add(d, 'buah-2', 'Buah porsi kedua', 'Makan', f2, f2 + 15, 'Target 1 porsi buah.');
-        add(d, 'kerja-3', 'Bekerja', 'Kerja', f2 + 15, workEnd, '');
-        add(d, 'pulang', 'Perjalanan pulang', 'Kerja', workEnd, workEnd + commute, '');
-        add(d, 'istirahat', 'Istirahat', 'Pribadi', workEnd + commute, 1095, '');
-        add(d, 'makan-malam', 'Makan malam', 'Makan', 1095, 1125, '');
-        add(d, 'skripsi-malam', 'Mengerjakan skripsi', 'Skripsi', 1125, 1200, '');
-        add(d, 'membaca', 'Membaca buku', 'Membaca', 1200, 1230, '');
-        add(d, 'persiapan-besok', 'Persiapan hari berikutnya', 'Pribadi', 1230, 1245, '');
-        add(d, 'persiapan-tidur', 'Persiapan tidur', 'Pribadi', 1245, bedtime, '');
-        add(d, 'target-tidur', 'Target tidur', 'Pribadi', bedtime, bedtime + 15, '');
+        // ---- Senin–Kamis ----
+        seq(d, 'skripsi-pagi', 'Mengerjakan skripsi', 'Skripsi', 420, 90, academicTargets[d]);
+        seq(d, 'buah-1', 'Buah porsi pertama', 'Makan', f1, 15, 'Target 1 porsi buah.');
+        if (fruitTarget > 2) seq(d, 'buah-3', 'Buah porsi ketiga', 'Makan', f1 + 30, 15, 'Target tambahan sesuai setelan.');
+        until(d, 'persiapan-akhir', 'Persiapan akhir sebelum kerja', 'Pribadi', cursor[d], workStart, '');
+        seq(d, 'persiapan-kerja', 'Persiapan kerja dan berpakaian', 'Kerja', workStart, 30, 'Bukan mandi kedua; sudah mandi setelah olahraga pagi.');
+        seq(d, 'berangkat', 'Perjalanan ke kantor', 'Kerja', null, commute, '');
+        seq(d, 'kerja-1', 'Bekerja', 'Kerja', null, Math.max(0, 720 - cursor[d]), '');
+        seq(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, '');
+        seq(d, 'kerja-2', 'Bekerja', 'Kerja', null, Math.max(0, f2 - cursor[d]), '');
+        seq(d, 'buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.');
+        if (fruitTarget > 3) seq(d, 'buah-4', 'Buah porsi keempat', 'Makan', f2 + 45, 15, 'Target tambahan sesuai setelan.');
+        seq(d, 'kerja-3', 'Bekerja', 'Kerja', null, Math.max(0, workEnd - cursor[d]), '');
+        seq(d, 'pulang', 'Perjalanan pulang', 'Kerja', null, commute, '');
+        seq(d, 'istirahat', 'Istirahat', 'Pribadi', null, Math.max(0, 1095 - cursor[d]), '');
+        seq(d, 'makan-malam', 'Makan malam', 'Makan', 1095, 30, '');
+        seq(d, 'skripsi-malam', 'Mengerjakan skripsi', 'Skripsi', null, 75, '');
+        seq(d, 'membaca', 'Membaca buku', 'Membaca', null, 30, '');
+        seq(d, 'persiapan-besok', 'Persiapan hari berikutnya', 'Pribadi', null, 15, '');
+        until(d, 'persiapan-tidur', 'Persiapan tidur', 'Pribadi', cursor[d], bedtime, '');
+        seq(d, 'target-tidur', 'Target tidur', 'Pribadi', bedtime, 15, '');
       } else if (d === 5) {
-        // Jumat
-        add(d, 'skripsi-singkat', 'Sesi singkat skripsi & target akhir pekan', 'Skripsi', 420, 480, academicTargets[5]);
-        add(d, 'buah-1', 'Buah porsi pertama', 'Makan', 480, 495, 'Target 1 porsi buah.');
-        add(d, 'persiapan-akhir', 'Persiapan akhir', 'Pribadi', 495, workStart, '');
-        add(d, 'persiapan-kerja', 'Persiapan kerja', 'Kerja', workStart, workStart + 30, '');
-        add(d, 'berangkat', 'Perjalanan ke kantor', 'Kerja', workStart + 30, workStart + 30 + commute, '');
-        add(d, 'kerja-1', 'Bekerja', 'Kerja', workStart + 30 + commute, 720, '');
-        add(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 780, '');
-        add(d, 'kerja-2', 'Bekerja', 'Kerja', 780, 915, '');
-        add(d, 'buah-2', 'Buah porsi kedua', 'Makan', f2, f2 + 15, 'Target 1 porsi buah.');
-        add(d, 'kerja-3', 'Bekerja', 'Kerja', f2 + 15, 1080, '');
-        add(d, 'makan-malam', 'Makan malam / jeda makan', 'Makan', 1080, 1110, '');
-        add(d, 'lembur', 'Lembur', 'Kerja', 1110, overtimeEnd, 'Tidak ada sesi skripsi atau membaca pada Jumat malam.');
-        add(d, 'pulang', 'Perjalanan pulang', 'Kerja', overtimeEnd, overtimeEnd + 30, '');
-        add(d, 'bersih', 'Bersih-bersih dan persiapan tidur', 'Pribadi', overtimeEnd + 30, overtimeEnd + 45, '');
-        add(d, 'tidur', 'Tidur', 'Pribadi', overtimeEnd + 45, overtimeEnd + 60, '');
-      } else if (d === 6) {
-        // Sabtu
-        const sabtu = [
-          ['skripsi-1', 'Mengerjakan skripsi', 'Skripsi', 420, 540, academicTargets[6]],
-          ['buah-1', 'Buah porsi pertama', 'Makan', 540, 555, 'Target 1 porsi buah.'],
-          ['skripsi-2', 'Mengerjakan skripsi', 'Skripsi', 555, 630, ''],
-          ['istirahat-1', 'Istirahat', 'Pribadi', 630, 645, ''],
-          ['skripsi-3', 'Mengerjakan skripsi', 'Skripsi', 645, 720, ''],
-          ['makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 780, ''],
-          ['ppt-1', 'Menyusun PowerPoint', 'Skripsi', 780, 900, ''],
-          ['istirahat-2', 'Istirahat', 'Pribadi', 900, 915, ''],
-          ['buah-2', 'Buah porsi kedua', 'Makan', 915, 930, 'Target 1 porsi buah.'],
-          ['ppt-2', 'Merapikan PowerPoint', 'Skripsi', 930, 1020, ''],
-          ['bebas', 'Waktu bebas dan istirahat', 'Pribadi', 1020, 1095, ''],
-          ['makan-malam', 'Makan malam', 'Makan', 1095, 1125, ''],
-          ['evaluasi', 'Evaluasi skripsi', 'Skripsi', 1125, 1185, ''],
-          ['membaca', 'Membaca buku', 'Membaca', 1185, 1215, ''],
-          ['pribadi', 'Waktu pribadi', 'Pribadi', 1215, 1245, ''],
-          ['persiapan-tidur', 'Persiapan tidur', 'Pribadi', 1245, bedtime, ''],
-          ['target-tidur', 'Target tidur', 'Pribadi', bedtime, bedtime + 15, '']
-        ];
-        sabtu.forEach(([k, t, c, a, b, n]) => add(d, k, t, c, a, b, n));
+        // ---- Jumat ----
+        seq(d, 'skripsi-singkat', 'Sesi singkat skripsi & target akhir pekan', 'Skripsi', 420, 60, academicTargets[5]);
+        seq(d, 'buah-1', 'Buah porsi pertama', 'Makan', 480, 15, 'Target 1 porsi buah.');
+        until(d, 'persiapan-akhir', 'Persiapan akhir', 'Pribadi', cursor[d], workStart, '');
+        seq(d, 'persiapan-kerja', 'Persiapan kerja', 'Kerja', workStart, 30, '');
+        seq(d, 'berangkat', 'Perjalanan ke kantor', 'Kerja', null, commute, '');
+        seq(d, 'kerja-1', 'Bekerja', 'Kerja', null, Math.max(0, 720 - cursor[d]), '');
+        seq(d, 'makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, '');
+        seq(d, 'kerja-2', 'Bekerja', 'Kerja', null, Math.max(0, f2 - cursor[d]), '');
+        seq(d, 'buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.');
+        seq(d, 'kerja-3', 'Bekerja', 'Kerja', null, Math.max(0, 1080 - cursor[d]), '');
+        seq(d, 'makan-malam', 'Makan malam / jeda makan', 'Makan', 1080, 30, '');
+        seq(d, 'lembur', 'Lembur', 'Kerja', 1110, Math.max(0, overtimeEnd - 1110), 'Tidak ada sesi skripsi atau membaca pada Jumat malam.');
+        seq(d, 'pulang', 'Perjalanan pulang', 'Kerja', null, 30, '');
+        seq(d, 'bersih', 'Bersih-bersih dan persiapan tidur', 'Pribadi', null, 15, '');
+        until(d, 'tidur', 'Tidur', 'Pribadi', cursor[d], bedtime, '');
       } else {
-        // Minggu
-        const minggu = [
-          ['tinjau', 'Meninjau progres skripsi', 'Skripsi', 420, 510, academicTargets[7]],
-          ['buah-1', 'Buah porsi pertama', 'Makan', 510, 525, 'Target 1 porsi buah.'],
-          ['ppt-1', 'Mengerjakan PowerPoint', 'Skripsi', 525, 600, ''],
-          ['istirahat-1', 'Istirahat', 'Pribadi', 600, 630, ''],
-          ['latihan', 'Latihan presentasi', 'Skripsi', 630, 720, ''],
-          ['makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 780, ''],
-          ['perbaikan', 'Perbaikan materi presentasi', 'Skripsi', 780, 870, ''],
-          ['bebas-1', 'Waktu bebas', 'Pribadi', 870, 915, ''],
-          ['buah-2', 'Buah porsi kedua', 'Makan', 915, 930, 'Target 1 porsi buah.'],
-          ['evaluasi', 'Evaluasi mingguan', 'Skripsi', 930, 990, ''],
-          ['pribadi', 'Waktu pribadi', 'Pribadi', 990, 1095, ''],
-          ['makan-malam', 'Makan malam', 'Makan', 1095, 1125, ''],
-          ['persiapan-minggu', 'Persiapan minggu berikutnya', 'Skripsi', 1125, 1170, ''],
-          ['membaca', 'Membaca buku', 'Membaca', 1170, 1200, ''],
-          ['persiapan-tidur', 'Persiapan tidur', 'Pribadi', 1200, 1230, ''],
-          ['tenang', 'Waktu tenang', 'Pribadi', 1230, bedtime, ''],
-          ['target-tidur', 'Target tidur', 'Pribadi', bedtime, bedtime + 15, '']
-        ];
-        minggu.forEach(([k, t, c, a, b, n]) => add(d, k, t, c, a, b, n));
+        // ---- Akhir pekan: jam buah juga mengikuti pengaturan ----
+        const weekend = d === 6
+          ? [
+              ['skripsi-1', 'Mengerjakan skripsi', 'Skripsi', 420, 120, academicTargets[6]],
+              ['buah-1', 'Buah porsi pertama', 'Makan', f1, 15, 'Target 1 porsi buah.'],
+              ['skripsi-2', 'Mengerjakan skripsi', 'Skripsi', null, 75, ''],
+              ['istirahat-1', 'Istirahat', 'Pribadi', null, 15, ''],
+              ['skripsi-3', 'Mengerjakan skripsi', 'Skripsi', null, 75, ''],
+              ['makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, ''],
+              ['ppt-1', 'Menyusun PowerPoint', 'Skripsi', null, 120, ''],
+              ['istirahat-2', 'Istirahat', 'Pribadi', null, 15, ''],
+              ['buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.'],
+              ['ppt-2', 'Merapikan PowerPoint', 'Skripsi', null, 90, ''],
+              ['bebas', 'Waktu bebas dan istirahat', 'Pribadi', null, 75, ''],
+              ['makan-malam', 'Makan malam', 'Makan', 1095, 30, ''],
+              ['evaluasi', 'Evaluasi skripsi', 'Skripsi', null, 60, ''],
+              ['membaca', 'Membaca buku', 'Membaca', null, 30, ''],
+              ['pribadi', 'Waktu pribadi', 'Pribadi', null, 30, ''],
+              ['persiapan-tidur', 'Persiapan tidur', 'Pribadi', null, Math.max(0, bedtime - 1245), ''],
+              ['target-tidur', 'Target tidur', 'Pribadi', bedtime, 15, '']
+            ]
+          : [
+              ['tinjau', 'Meninjau progres skripsi', 'Skripsi', 420, 90, academicTargets[7]],
+              ['buah-1', 'Buah porsi pertama', 'Makan', f1, 15, 'Target 1 porsi buah.'],
+              ['ppt-1', 'Mengerjakan PowerPoint', 'Skripsi', null, 75, ''],
+              ['istirahat-1', 'Istirahat', 'Pribadi', null, 30, ''],
+              ['latihan', 'Latihan presentasi', 'Skripsi', null, 90, ''],
+              ['makan-siang', 'Istirahat dan makan siang', 'Makan', 720, 60, ''],
+              ['perbaikan', 'Perbaikan materi presentasi', 'Skripsi', null, 90, ''],
+              ['bebas-1', 'Waktu bebas', 'Pribadi', null, 45, ''],
+              ['buah-2', 'Buah porsi kedua', 'Makan', f2, 15, 'Target 1 porsi buah.'],
+              ['evaluasi', 'Evaluasi mingguan', 'Skripsi', null, 60, ''],
+              ['pribadi', 'Waktu pribadi', 'Pribadi', null, 105, ''],
+              ['makan-malam', 'Makan malam', 'Makan', 1095, 30, ''],
+              ['persiapan-minggu', 'Persiapan minggu berikutnya', 'Skripsi', null, 45, ''],
+              ['membaca', 'Membaca buku', 'Membaca', null, 30, ''],
+              ['tenang', 'Waktu tenang', 'Pribadi', null, Math.max(0, bedtime - 1230), ''],
+              ['target-tidur', 'Target tidur', 'Pribadi', bedtime, 15, '']
+            ];
+        // Sisipkan porsi buah tambahan bila target > 2 (F-15).
+        const withExtra = [];
+        weekend.forEach((row) => {
+          withExtra.push(row);
+          if (row[0] === 'buah-1' && fruitTarget > 2) {
+            withExtra.push(['buah-3', 'Buah porsi ketiga', 'Makan', f1 + 45, 15, 'Target tambahan sesuai setelan.']);
+          }
+          if (row[0] === 'buah-2' && fruitTarget > 3) {
+            withExtra.push(['buah-4', 'Buah porsi keempat', 'Makan', f2 + 45, 15, 'Target tambahan sesuai setelan.']);
+          }
+        });
+        withExtra.forEach(([k, t, c, start, dur, n]) => {
+          if (k === 'persiapan-tidur') until(d, k, t, c, cursor[d], bedtime, n);
+          else seq(d, k, t, c, start, dur, n);
+        });
+      }
+
+      // F-15: label porsi mengikuti target, bukan teks tetap "pertama/kedua".
+      if (fruitTarget > 2) {
+        for (let n = 3; n <= fruitTarget; n++) {
+          const a = acts.find((x) => x.id === `tpl-${d}-buah-${n}`);
+          if (a) a.title = `Buah porsi ${fruitLabel(n)}`;
+        }
       }
     }
     return acts;
@@ -216,15 +285,16 @@ const Seed = (() => {
 
   function initialInventory() {
     const today = new Date();
+    // F-01/V-16: data contoh diberi penanda agar bisa dihapus sekali klik.
     return [
-      { id: 'inv-demo-jambu', fruitId: 'jambu', name: 'Jambu biji', quantityPurchased: 500, quantityRemaining: 300, unit: 'gram', estimatedServings: 2, purchaseDate: dateKey(addDays(today, -2)), storageLocation: 'Kulkas', condition: 'Agak keras, baik', status: 'available' },
-      { id: 'inv-demo-pepaya', fruitId: 'pepaya', name: 'Pepaya', quantityPurchased: 1, quantityRemaining: 1, unit: 'kg utuh', estimatedServings: 4, purchaseDate: dateKey(addDays(today, -1)), storageLocation: 'Suhu ruang', condition: 'Mulai matang', status: 'consume-soon' },
-      { id: 'inv-demo-jeruk', fruitId: 'jeruk', name: 'Jeruk', quantityPurchased: 3, quantityRemaining: 3, unit: 'buah', estimatedServings: 3, purchaseDate: dateKey(addDays(today, -2)), storageLocation: 'Kulkas', condition: 'Baik', status: 'available' }
+      { id: 'inv-demo-jambu', fruitId: 'jambu', name: 'Jambu biji', quantityPurchased: 500, quantityRemaining: 300, unit: 'gram', servingSize: 150, servingUnit: 'gram', estimatedServings: 2, purchaseDate: dateKey(addDays(today, -2)), storageLocation: 'Kulkas', condition: 'Agak keras, baik', status: 'available', isSample: true },
+      { id: 'inv-demo-pepaya', fruitId: 'pepaya', name: 'Pepaya', quantityPurchased: 1, quantityRemaining: 1, unit: 'kg utuh', servingSize: 150, servingUnit: 'gram', estimatedServings: 4, purchaseDate: dateKey(addDays(today, -1)), storageLocation: 'Suhu ruang', condition: 'Mulai matang', status: 'consume-soon', isSample: true },
+      { id: 'inv-demo-jeruk', fruitId: 'jeruk', name: 'Jeruk', quantityPurchased: 3, quantityRemaining: 3, unit: 'buah', servingSize: 1, servingUnit: 'buah', estimatedServings: 3, purchaseDate: dateKey(addDays(today, -2)), storageLocation: 'Kulkas', condition: 'Baik', status: 'available', isSample: true }
     ];
   }
 
   return {
     settings, fruitCatalog, academicTargets, thesisTasks, shoppingTemplate,
-    fruitSchedule, workoutFocus, buildActivities, initialInventory
+    fruitSchedule, fruitScheduleFor, workoutFocus, buildActivities, initialInventory
   };
 })();

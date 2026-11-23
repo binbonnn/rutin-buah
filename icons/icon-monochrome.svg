@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Rutin dan Buah">
+  <rect width="512" height="512" rx="112" fill="#000"/>
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="96" y="104" width="320" height="344" rx="44" stroke-width="26"/>
+    <path d="M148 196h216M148 268h150M148 340h186" stroke-width="26"/>
+    <path d="M310 352c0-44 30-78 74-82-4 44-32 74-74 82Z" stroke-width="22"/>
+    <path d="M310 352c14-22 34-40 58-52" stroke-width="18"/>
+  </g>
+</svg>

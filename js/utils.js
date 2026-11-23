@@ -4,9 +4,15 @@ const Utils = (() => {
   const DAY_SHORT = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
   const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
+  // Q-09: satu sumber versi aplikasi (dipakai UI, ekspor, dan dokumentasi).
+  const APP_VERSION = '1.1.0';
+
   const pad = (n) => String(n).padStart(2, '0');
 
   function uid(prefix = 'id') {
+    if (globalThis.crypto && typeof crypto.randomUUID === 'function') {
+      return prefix + '-' + crypto.randomUUID();
+    }
     return prefix + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
   }
 
@@ -14,21 +20,31 @@ const Utils = (() => {
     if (value == null || value === '') return null;
     const m = String(value).match(/^(\d{1,2})[.:](\d{2})$/);
     if (!m) return null;
-    const h = Math.min(23, parseInt(m[1], 10));
-    const min = Math.min(59, parseInt(m[2], 10));
+    const h = Number(m[1]);
+    const min = Number(m[2]);
+    if (!Number.isFinite(h) || !Number.isFinite(min) || h < 0 || h > 23 || min < 0 || min > 59) return null;
     return h * 60 + min;
+  }
+
+  /** F-06: bungkus menit ke 0..1439 agar tidak pernah menghasilkan "24.05". */
+  function wrapMinutes(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return 0;
+    return ((Math.round(n) % 1440) + 1440) % 1440;
   }
 
   function fmtTime(value) {
     const mins = typeof value === 'number' ? value : parseTime(value);
     if (mins == null) return '—';
-    return pad(Math.floor(mins / 60)) + '.' + pad(mins % 60);
+    const w = wrapMinutes(mins);
+    return pad(Math.floor(w / 60)) + '.' + pad(w % 60);
   }
 
   function fmtTimeColon(value) {
     const mins = typeof value === 'number' ? value : parseTime(value);
     if (mins == null) return '';
-    return pad(Math.floor(mins / 60)) + ':' + pad(mins % 60);
+    const w = wrapMinutes(mins);
+    return pad(Math.floor(w / 60)) + ':' + pad(w % 60);
   }
 
   /** 1 = Senin ... 7 = Minggu */
@@ -104,7 +120,7 @@ const Utils = (() => {
   }
 
   function clamp(n, min, max) {
-    return Math.max(min, Math.min(max, n));
+    return Math.max(min, Math.min(max, number(n, min)));
   }
 
   function escapeHtml(str) {
@@ -116,21 +132,40 @@ const Utils = (() => {
       .replace(/'/g, '&#39;');
   }
 
-  function deepMerge(base, extra) {
-    if (Array.isArray(extra)) return extra.slice();
-    if (extra && typeof extra === 'object') {
-      const out = {};
-      const keys = new Set([...Object.keys(base || {}), ...Object.keys(extra)]);
-      keys.forEach((k) => {
-        const b = base && base[k];
-        const e = extra[k];
-        out[k] = e && typeof e === 'object' && !Array.isArray(e) && b && typeof b === 'object' && !Array.isArray(b)
-          ? deepMerge(b, e)
-          : e;
-      });
-      return out;
+  /* D-01/D-08 mergeDefaults: kunci yang tidak ada pada data disi dari default.
+     Kunci proto diblokir agar impor JSON tidak mencemari prototipe hasil. */
+  const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const BAD_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+  function mergeDefaults(base, extra) {
+    if (Array.isArray(base)) return Array.isArray(extra) ? extra.slice() : base.slice();
+    if (!isObj(base)) {
+      return (extra !== undefined && extra !== null && typeof extra === typeof base) ? extra : base;
     }
-    return extra === undefined ? base : extra;
+    const out = {};
+    for (const k of Object.keys(base)) {
+      if (BAD_KEYS.has(k)) continue;
+      out[k] = mergeDefaults(base[k], isObj(extra) ? extra[k] : undefined);
+    }
+    if (isObj(extra)) {
+      for (const k of Object.keys(extra)) {
+        if (BAD_KEYS.has(k) || k in out) continue;
+        out[k] = extra[k]; // kompatibilitas maju: pertahankan kunci yang tidak dikenal
+      }
+    }
+    return out;
+  }
+
+  /** N-01: jendela waktu, bukan pencocokan menit persis. */
+  function withinWindow(target, now, windowMin = 10) {
+    return target != null && now >= target && now - target <= windowMin;
+  }
+
+  /** V-08: "1 × 400 gram" bila satuan sudah memuat ukuran kemasan. */
+  function formatQtyUnit(quantity, unit) {
+    const q = number(quantity, 0);
+    const u = String(unit || 'buah').trim();
+    return /^\d/.test(u) ? `${q} × ${u}` : `${q} ${u}`;
   }
 
   function debounce(fn, ms = 200) {
@@ -166,6 +201,7 @@ const Utils = (() => {
       close: '<path d="M6 6l12 12M18 6 6 18"/>',
       edit: '<path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z"/><path d="m14.5 6.5 3 3"/>',
       trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14"/>',
+      more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
       chevronLeft: '<path d="m15 5-7 7 7 7"/>',
       chevronRight: '<path d="m9 5 7 7-7 7"/>',
       chevronDown: '<path d="m5 9 7 7 7-7"/>',
@@ -190,8 +226,11 @@ const Utils = (() => {
   }
 
   return {
-    DAY_NAMES, DAY_SHORT, MONTHS, pad, uid, parseTime, fmtTime, fmtTimeColon, dow, dayName,
+    APP_VERSION, DAY_NAMES, DAY_SHORT, MONTHS, pad, uid, parseTime, wrapMinutes, fmtTime, fmtTimeColon, dow, dayName,
     dateKey, fromKey, addDays, startOfWeek, weekDates, weekKey, formatDate, relativeDay,
-    rupiah, number, clamp, escapeHtml, deepMerge, debounce, downloadFile, icon
+    rupiah, number, clamp, escapeHtml, isObj, mergeDefaults, withinWindow, formatQtyUnit,
+    debounce, downloadFile, icon,
+    // Alih-alih menghapus nama lama, arahkan ke implementasi yang aman.
+    deepMerge: mergeDefaults
   };
 })();

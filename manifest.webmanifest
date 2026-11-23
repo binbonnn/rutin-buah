@@ -1,17 +1,34 @@
 {
-  "id": "./",
+  "id": "/",
   "name": "Rutin & Buah — Weekly Routine & Fruit Planner",
   "short_name": "Rutin & Buah",
   "description": "Pengelola rutinitas mingguan, progres skripsi, konsumsi buah, stok, dan anggaran belanja.",
   "lang": "id",
   "dir": "ltr",
-  "start_url": "./index.html",
+  "start_url": "./index.html?source=pwa",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "orientation": "any",
   "background_color": "#cbd2dc",
   "theme_color": "#cbd2dc",
   "categories": ["productivity", "lifestyle", "health"],
+  "screenshots": [
+    {
+      "src": "screenshots/mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Beranda di ponsel"
+    },
+    {
+      "src": "screenshots/desktop.png",
+      "sizes": "1280x800",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Beranda di desktop"
+    }
+  ],
   "icons": [
     {
       "src": "icons/icon-192.png",
@@ -36,6 +53,12 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
+    },
+    {
+      "src": "icons/icon-monochrome.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "monochrome"
     }
   ],
   "shortcuts": [
@@ -43,14 +66,14 @@
       "name": "Catat buah",
       "short_name": "Buah",
       "description": "Catat konsumsi buah hari ini",
-      "url": "./index.html#/buah?action=consume",
+      "url": "./index.html?source=pwa#/buah?action=consume",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Jadwal hari ini",
       "short_name": "Jadwal",
       "description": "Buka jadwal mingguan",
-      "url": "./index.html#/jadwal",
+      "url": "./index.html?source=pwa#/jadwal",
       "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }]
     }
   ]

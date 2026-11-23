@@ -14,7 +14,7 @@ const Pages = (() => {
   function dashboard() {
     const now = new Date();
     const day = Utils.dow(now);
-    const acts = Store.activitiesForDay(day);
+    const acts = Store.activitiesForDay(now); // F-08: ikut filters tanggal aktivitas sekali jadi
     const statuses = acts.map((a) => ({ a, status: Store.activityStatus(a, now) }));
     const done = statuses.filter((s) => s.status === 'completed').length;
     const daily = Store.progressForDate(now);
@@ -29,7 +29,7 @@ const Pages = (() => {
     const remState = Store.reminderFor(reminder.session);
     const taskStats = Store.taskStats();
     const todayTarget = Store.targetForDay(day);
-    const topTasks = Store.state.tasks.slice(0, 3);
+    const topTasks = Store.nearestTasks(3); // F-12: belum selesai & sesuai urutan
     const timeline = statuses.filter((s) => s.status === 'ongoing' || s.status === 'upcoming').slice(0, 3);
     const timelineItems = timeline.length ? timeline : statuses.slice(0, 3);
 
@@ -66,15 +66,26 @@ const Pages = (() => {
 
     const timelineRows = timelineItems.map((s, i) => {
       const tone = s.status === 'ongoing' ? 'coral' : i % 2 ? 'violet' : 'mint';
+      const start = Utils.parseTime(s.a.startTime);
+      const current = now.getHours() * 60 + now.getMinutes();
+      const inMinutes = start == null ? '' : start > current
+        ? `dalam ${start - current} mnt`
+        : (s.status === 'ongoing' ? 'Sedang berjalan' : 'Akan datang');
       return `<div class="timeline-row">
         <span class="tl-left"><span class="tl-mark ${tone}" aria-hidden="true">${i + 1}</span>
           <strong>${esc(Utils.fmtTime(s.a.startTime))} · ${esc(s.a.title)}</strong></span>
-        <small>${s.status === 'ongoing' ? 'Aktif' : esc(Utils.dayName(Utils.dow(now), true))}</small>
+        <small>${inMinutes || esc(Utils.fmtTime(s.a.startTime))}</small>
       </div>`;
     }).join('') || '<p class="hint">Belum ada jadwal mendatang.</p>';
 
+    const backupAge = Store.backupAgeDays();
+    const backupWarn = backupAge != null && backupAge > 14
+      ? `<div class="alert alert-warn stock-alert" role="status">${ic('alert', 18)} <span><strong>Cadangan terakhir ${backupAge} hari lalu.</strong> Ekspor data agar catatan tidak hilang bila storage browser dibersihkan.</span><button class="btn btn-soft btn-sm" type="button" data-goto="pengaturan">Buka cadangan</button></div>`
+      : '';
+
     return `
       <div class="stack">
+        ${backupWarn}
         <section class="hero-card tile-hero-lavender">
           <div class="hero-glow" aria-hidden="true"></div>
           <div class="hero-content">
@@ -106,7 +117,7 @@ const Pages = (() => {
                   ${UI.bar(weekly.pct, 'primary', 'Progres aktivitas minggu ini')}
                   <div class="bento-pill-row">
                     <button class="mini-pill" type="button" data-action="add-activity" data-day="${day}">+ Tambah aktivitas</button>
-                    <a class="mini-pill square" href="#/jadwal" aria-label="Lihat jadwal mingguan">→</a>
+                    <a class="mini-pill tile-arrow" href="#/jadwal" aria-label="Lihat jadwal mingguan">${ic('chevronRight', 18)}</a>
                   </div>
                 </div>
               </section>
@@ -114,23 +125,23 @@ const Pages = (() => {
               <section class="card tile-mint bento-tile">
                 <div class="bento-top">
                   <span class="sculpt-icon sculpt-mint" aria-hidden="true">${ic('fruit', 20)}</span>
-                  <span class="pct-pill">${Math.round((servings / Math.max(1, target)) * 100)}%</span>
+                  <span class="pct-pill">${Utils.clamp(Math.round((servings / Math.max(1, target)) * 100), 0, 100)}%</span>
                 </div>
                 <h3>Konsumsi Buah Hari Ini</h3>
                 <p>Target ${target} porsi per hari</p>
                 <div class="bento-body">
-                  <div class="bento-count"><strong>${servings}</strong><span> / ${target} porsi</span><em>${servings >= target ? 'Target tercapai' : 'Belum ada'}</em></div>
+                  <div class="bento-count"><strong>${servings}</strong><span> / ${target} porsi</span><em>${servings >= target ? 'Target tercapai' : servings === 0 ? 'Belum ada' : `Kurang ${target - servings} porsi`}</em></div>
                   <div class="bento-pill-row">
-                    <button class="mini-pill" type="button" data-action="open-consume">+ Porsi 1</button>
-                    <button class="mini-pill" type="button" data-action="open-consume">+ Porsi 2</button>
-                    <a class="mini-pill square" href="#/buah" aria-label="Lihat catatan buah">→</a>
+                    <button class="mini-pill" type="button" data-action="open-consume-preset" data-preset="1">+ 1 porsi</button>
+                    <button class="mini-pill" type="button" data-action="open-consume-preset" data-preset="2">+ 2 porsi</button>
+                    <a class="mini-pill tile-arrow" href="#/buah" aria-label="Lihat catatan buah">${ic('chevronRight', 18)}</a>
                   </div>
                 </div>
               </section>
 
-              <section class="card tile-peach bento-tile">
+              <section class="card tile-thesis bento-tile">
                 <div class="bento-top">
-                  <span class="sculpt-icon sculpt-coral" aria-hidden="true">${ic('book', 20)}</span>
+                  <span class="sculpt-icon sculpt-thesis" aria-hidden="true">${ic('book', 20)}</span>
                   <span class="pct-pill">${taskStats.done}/${taskStats.total}</span>
                 </div>
                 <h3>Skripsi &amp; Presentasi</h3>
@@ -144,7 +155,6 @@ const Pages = (() => {
                 <a class="btn-icon" href="#/jadwal" title="Buka Jadwal" aria-label="Buka Jadwal">${ic('clock', 17)}</a>
                 <a class="btn-icon" href="#/buah" title="Catatan Buah" aria-label="Buka catatan buah">${ic('fruit', 17)}</a>
                 <button class="btn-icon" type="button" data-action="open-stock" title="Tambah stok" aria-label="Tambah stok">${ic('box', 17)}</button>
-                <span class="action-label">Centang tugas atau catat buah untuk memperbarui cincin progres.</span>
               </div>
               <a class="btn btn-primary btn-sm" href="#/jadwal">Atur Jadwal</a>
             </div>
@@ -165,10 +175,10 @@ const Pages = (() => {
             <section class="card" style="flex:1">
               <div class="section-head" style="margin-bottom:12px">
                 <div class="flex items-center gap-2" style="display:flex;align-items:center;gap:8px">
-                  <span style="width:22px;height:22px;border-radius:8px;background:linear-gradient(145deg,#fca58e,#eb725c);color:#fff;display:grid;place-items:center;font-size:.62rem;font-weight:800">1</span>
+                  <span style="width:24px;height:24px;border-radius:8px;background:var(--coral-grad);color:var(--on-coral);display:grid;place-items:center;font-size:var(--fs-xs);font-weight:800">1</span>
                   <h2>Berikutnya</h2>
                 </div>
-                <span style="font-size:.68rem;font-weight:700;color:var(--ink-secondary)">${esc(Utils.dayName(day, true))}, ${esc(Utils.formatDate(now, { short: true }))}</span>
+                <span class="hint">${esc(Utils.formatDate(now, { short: true }))}</span>
               </div>
               <div class="timeline-list">${timelineRows}</div>
               <a class="btn mini-pill timeline-foot" href="#/jadwal"><span>Lihat Semua Jadwal</span><span aria-hidden="true">⌄</span></a>
@@ -185,7 +195,7 @@ const Pages = (() => {
           <section class="card">
             ${UI.section('Stok buah', 'Siap dikonsumsi sekarang', `<a class="link-btn" href="#/buah">Lihat semua</a>`)}
             <div class="summary-list">
-              <div class="summary-item"><span class="summary-icon icon-green">${ic('box', 20)}</span><div><strong>${inv.length} jenis buah</strong><span>Tersedia dalam stok</span></div></div>
+              <div class="summary-item"><span class="summary-icon icon-green">${ic('box', 20)}</span><div><strong>${Store.fruitKinds()} jenis buah</strong><span>Tersedia dalam stok</span></div></div>
               <div class="summary-item"><span class="summary-icon icon-amber">${ic('clock', 20)}</span><div><strong>${soon.length} perlu segera</strong><span>Sebaiknya dikonsumsi lebih dulu</span></div></div>
             </div>
           </section>
@@ -245,10 +255,10 @@ const Pages = (() => {
 
     const columns = dates.map((d) => {
       const dayNum = Utils.dow(d);
-      const acts = Store.activitiesForDay(dayNum);
+      const acts = Store.activitiesForDay(d);
       const key = Utils.dateKey(d);
       const p = Store.progressForDate(d);
-      const rows = acts.map((a) => activityRow(a, key)).join('');
+      const rows = renderDayActivities(acts, key);
       return `<section class="day-column ${key === selKey ? 'is-selected' : ''}" data-day-column="${key}">
         <div class="day-column-head">
           <div><strong>${esc(Utils.dayName(dayNum))}</strong><span>${d.getDate()} ${esc(Utils.MONTHS[d.getMonth()].slice(0, 3))}</span></div>
@@ -274,12 +284,46 @@ const Pages = (() => {
         </div>
         <p class="hint search-empty" data-search-empty hidden>Tidak ada aktivitas yang cocok.</p>
         <div class="day-strip" role="group" aria-label="Pilih hari">${strip}</div>
-        <div class="legend">
-          <span>${UI.badge('completed')}</span><span>${UI.badge('ongoing')}</span><span>${UI.badge('upcoming')}</span><span>${UI.badge('missed')}</span>
-        </div>
         <div class="week-grid">${columns}</div>
         <p class="hint">Status tersimpan per tanggal. Aktivitas yang lewat waktu tidak otomatis dianggap selesai. Ubah jadwal Subuh dan blok lainnya melalui Pengaturan atau langsung dari daftar aktivitas.</p>
       </div>`;
+  }
+
+  /** V-07: rutinitas pagi dikelompokkan; garis "sekarang" ditaruh sebelum item berikutnya. */
+  function renderDayActivities(acts, dateKeyStr) {
+    const now = new Date();
+    const current = now.getHours() * 60 + now.getMinutes();
+    const isToday = dateKeyStr === Utils.dateKey(now);
+    let nowPlaced = false;
+    const nowLine = () => (isToday && !nowPlaced
+      ? `<div class="now-line" role="separator" aria-label="Sekarang ${Utils.fmtTime(current)}"></div>` : '');
+
+    const out = [];
+    let i = 0;
+    while (i < acts.length) {
+      const a = acts[i];
+      const start = Utils.parseTime(a.startTime);
+      if (isToday && !nowPlaced && start != null && start > current) {
+        out.push(nowLine());
+        nowPlaced = true;
+      }
+      if (a.block) {
+        const group = [];
+        while (i < acts.length && acts[i].block === a.block) group.push(acts[i++]);
+        const done = group.filter((x) => Store.activityStatus(x, Utils.fromKey(dateKeyStr)) === 'completed').length;
+        const open = group.some((x) => Store.activityStatus(x, Utils.fromKey(dateKeyStr)) === 'ongoing') ? ' open' : '';
+        out.push(`<details class="routine-group"${open}>
+          <summary><strong>${esc(a.blockLabel || a.block)}</strong> · ${group.length} aktivitas · ${esc(Utils.fmtTime(group[0].startTime))}–${esc(Utils.fmtTime(group[group.length - 1].endTime))}
+          <span class="badge badge-ok">${done}/${group.length}</span></summary>
+          <div class="routine-items">${group.map((x) => activityRow(x, dateKeyStr)).join('')}</div>
+        </details>`);
+      } else {
+        out.push(activityRow(a, dateKeyStr));
+        i++;
+      }
+    }
+    if (isToday && !nowPlaced) out.push(nowLine());
+    return out.join('');
   }
 
   function activityRow(a, dateKeyStr) {
@@ -339,8 +383,8 @@ const Pages = (() => {
     const stateOf = (rem, list) => rem === 'done' || bought(list) ? 'done' : rem === 'pending' ? 'active' : 'next';
     const steps = [
       { label: 'Rencana', state: items.length ? 'done' : 'active' },
-      { label: 'Belanja Minggu', state: stateOf(mainRem, mainItems) },
-      { label: 'Belanja Rabu', state: stateOf(refillRem, refillItems) },
+      { label: `Belanja ${Utils.dayName(Store.state.settings.shoppingDays.main, true)}`, state: stateOf(mainRem, mainItems) },
+      { label: `Belanja ${Utils.dayName(Store.state.settings.shoppingDays.refill, true)}`, state: stateOf(refillRem, refillItems) },
       { label: 'Selesai', state: items.length && bought(items) ? 'done' : (mainRem === 'done' && refillRem === 'done') ? 'active' : 'next' }
     ];
     let foundActive = false;
@@ -368,7 +412,8 @@ const Pages = (() => {
       daysLeft = diff >= 0 ? `${diff} hari lagi` : `${Math.abs(diff)} hari lalu`;
     }
     const tasks = [...s.tasks].sort((a, b) => (a.order || 0) - (b.order || 0));
-    const current = tasks.find((t) => t.status === 'in-progress');
+    // F-17: turunkan "tahap saat ini" dari tugas aktif, lalu dari tugas pertama yang belum selesai.
+    const current = tasks.find((t) => t.status === 'in-progress') || tasks.find((t) => t.status !== 'completed');
     const history = tasks.filter((t) => t.status === 'completed' && t.completedAt).sort((a, b) => b.completedAt.localeCompare(a.completedAt));
 
     const rows = tasks.map((t, i) => `
@@ -381,6 +426,7 @@ const Pages = (() => {
           ${t.notes ? `<div class="task-note">${esc(t.notes)}</div>` : ''}
         </div>
         <div class="task-card-tools">
+          ${t.status === 'todo' ? `<button class="btn-icon btn-icon-sm" type="button" data-action="start-task" data-id="${esc(t.id)}" aria-label="Mulai kerjakan ${esc(t.title)}" title="Mulai kerjakan">${ic('sparkle', 16)}</button>` : ''}
           <button class="btn-icon btn-icon-sm" type="button" data-action="task-up" data-id="${esc(t.id)}" ${i === 0 ? 'disabled' : ''} aria-label="Naikkan urutan">${ic('chevronUp', 16)}</button>
           <button class="btn-icon btn-icon-sm" type="button" data-action="task-down" data-id="${esc(t.id)}" ${i === tasks.length - 1 ? 'disabled' : ''} aria-label="Turunkan urutan">${ic('chevronDown', 16)}</button>
           <button class="btn-icon btn-icon-sm" type="button" data-action="edit-task" data-id="${esc(t.id)}" aria-label="Edit tugas">${ic('edit', 16)}</button>
@@ -408,7 +454,7 @@ const Pages = (() => {
         </section>
 
         <section class="card">
-          ${UI.section('Daftar tugas', 'Diurutkan berdasarkan prioritas pekerjaan')}
+          ${UI.section('Daftar tugas', 'Diurutkan berdasarkan urutan yang Anda atur')}
           <div class="task-cards">${rows || UI.empty('book', 'Belum ada tugas')}</div>
         </section>
 
@@ -439,6 +485,7 @@ const Pages = (() => {
   /* ========================= BUAH & STOK ========================= */
   function buah() {
     const s = S();
+    const soon = Store.consumeSoonInventory();
     const today = new Date();
     const key = Utils.dateKey(today);
     const servings = Store.servingsForDate(today);
@@ -451,26 +498,32 @@ const Pages = (() => {
     }).join('');
 
     const d = Utils.dow(today);
-    const plan = Seed.fruitSchedule[d] || [];
+    const plan = (Seed.fruitScheduleFor(s.settings)[d] || []).slice(0, target); // F-15: mengikuti target
+    const planTimes = [s.settings.fruit1Time, s.settings.fruit2Time];
+    for (let i = 2; i < target; i++) planTimes.push(Utils.fmtTime((Utils.parseTime(s.settings.fruit2Time) ?? 915) + (i - 1) * 90));
     const planRows = plan.map((p, i) => {
-      const time = i === 0 ? s.settings.fruit1Time : s.settings.fruit2Time;
-      return `<div class="plan-row"><span class="plan-time">${esc(Utils.fmtTime(time))}</span><div><strong>${esc(p.label)}</strong><small>${i === 0 ? 'Porsi pertama' : 'Porsi kedua'}</small></div><button class="btn btn-soft btn-sm" type="button" data-action="log-planned" data-fruit="${p.fruitId}" data-label="${esc(p.label)}">${ic('check', 15)} Sudah</button></div>`;
+      const time = planTimes[i] || planTimes[planTimes.length - 1];
+      const portion = ['Porsi pertama', 'Porsi kedua', 'Porsi ketiga', 'Porsi keempat'][i] || `Porsi ke-${i + 1}`;
+      return `<div class="plan-row"><span class="plan-time">${esc(Utils.fmtTime(time))}</span><div><strong>${esc(p.label)}</strong><small>${portion}</small></div><button class="btn btn-soft btn-sm" type="button" data-action="log-planned" data-fruit="${p.fruitId}" data-label="${esc(p.label)}">${ic('check', 15)} Sudah</button></div>`;
     }).join('');
 
     const inventory = s.inventory.slice().sort((a, b) => {
-      const rank = { 'consume-soon': 0, available: 1, finished: 2 };
-      return (rank[a.status] ?? 3) - (rank[b.status] ?? 3);
+      const rank = (x) => x.status === 'finished' || Number(x.quantityRemaining) <= 0 ? 2 : Store.isConsumeSoon(x) ? 0 : 1;
+      return rank(a) - rank(b);
     });
     const invRows = inventory.map((i) => {
       const fruit = Store.fruitById(i.fruitId);
-      const isSoon = i.status === 'consume-soon';
+      const soonReason = Store.consumeSoonReason(i);
+      const isSoon = !!soonReason;
       const isDone = i.status === 'finished' || Number(i.quantityRemaining) <= 0;
       return `<article class="stock-card ${isDone ? 'is-empty' : ''}">
         <div class="stock-head">
           <span class="stock-emoji">${ic('fruit', 22)}</span>
           <div class="stock-title"><strong>${esc(i.name)}</strong><span>Dibeli ${esc(Utils.relativeDay(i.purchaseDate))} · ${esc(i.storageLocation)}</span></div>
           ${UI.chip(isDone ? 'Habis' : isSoon ? 'Segera dikonsumsi' : 'Tersedia', isDone ? 'neutral' : isSoon ? 'warn' : 'ok')}
+          ${i.isSample ? UI.chip('Contoh', 'neutral') : ''}
         </div>
+        ${isSoon && !isDone ? `<p class="hint" style="margin-top:4px">${esc(soonReason)}.</p>` : ''}
         <div class="stock-stats">
           <div><span>Sisa</span><strong>${esc(String(i.quantityRemaining))} ${esc(i.unit)}</strong></div>
           <div><span>Perkiraan porsi</span><strong>${esc(String(i.estimatedServings))}</strong></div>
@@ -491,9 +544,12 @@ const Pages = (() => {
 
     return `
       <div class="stack">
-        ${UI.pageHead('Konsumsi & persediaan', 'Buah & Stok', 'Target 2 porsi buah per hari, 14 porsi per minggu.', `
+        ${UI.pageHead('Konsumsi & persediaan', 'Buah & Stok', `Target ${target} porsi buah per hari, ${Store.weeklyTarget()} porsi per minggu.`, `
           <button class="btn btn-soft btn-sm" type="button" data-action="open-stock">${ic('plus', 16)} Tambah stok</button>
           <button class="btn btn-primary btn-sm" type="button" data-action="open-consume">${ic('plus', 16)} Catat buah</button>`)}
+
+        ${soon.length ? `<div class="alert alert-warn stock-alert">${ic('alert', 18)} <span><strong>${esc(soon.map((i) => i.name).join(', '))} perlu dikonsumsi lebih dulu.</strong></span><button class="btn btn-soft btn-sm" type="button" data-action="open-consume">Catat sekarang</button></div>` : ''}
+        ${s.inventory.some((i) => i.isSample) ? `<div class="alert alert-info stock-alert">${ic('info', 18)} <span><strong>Stok contoh</strong> ditampilkan untuk menunjukkan cara kerja. Hapus bila tidak diperlukan.</span><button class="btn btn-soft btn-sm" type="button" data-action="remove-samples">Hapus contoh</button></div>` : ''}
 
         <section class="card">
           <div class="fruit-summary">
@@ -529,10 +585,11 @@ const Pages = (() => {
     const s = S();
     const budgetLocked = !!s.settings.budgetLocked;
     const items = Store.currentWeekShopping();
+    const dayShort = (n) => Utils.dayName(Number(n) || 7, true);
     const totals = Store.shoppingTotals(items);
     const sessions = [
-      { key: 'main', title: 'Belanja utama', day: s.settings.shoppingDays.main, icon: 'cart', note: 'Pembelian Minggu' },
-      { key: 'refill', title: 'Belanja ulang buah segar', day: s.settings.shoppingDays.refill, icon: 'sparkle', note: 'Pembelian Rabu' }
+      { key: 'main', title: 'Belanja utama', day: s.settings.shoppingDays.main, icon: 'cart', note: `Pembelian ${Utils.dayName(s.settings.shoppingDays.main)}` },
+      { key: 'refill', title: 'Belanja ulang buah segar', day: s.settings.shoppingDays.refill, icon: 'sparkle', note: `Pembelian ${Utils.dayName(s.settings.shoppingDays.refill)}` }
     ];
 
     const sessionCards = sessions.map((sess) => {
@@ -544,15 +601,15 @@ const Pages = (() => {
         const subtotalAct = (Number(i.quantity) || 0) * (Number(i.actualUnitPrice) || 0);
         return `<div class="shop-row ${i.isPurchased ? 'is-bought' : ''}">
           <button class="check" type="button" data-action="toggle-shop" data-id="${esc(i.id)}" aria-label="Tandai dibeli: ${esc(i.name)}" aria-pressed="${i.isPurchased}">${UI.checkIcon(i.isPurchased)}</button>
-          <div class="shop-main"><strong>${esc(i.name)}</strong><span>${esc(String(i.quantity))} ${esc(i.unit)}</span></div>
+          <div class="shop-main"><strong>${esc(i.name)}</strong><span>${esc(Utils.formatQtyUnit(i.quantity, i.unit))}</span></div>
           <div class="shop-price"><small>Estimasi</small><strong>${esc(Utils.rupiah(subtotalEst))}</strong></div>
-          <div class="shop-price"><small>Aktual</small><input class="mini-input" type="number" min="0" inputmode="numeric" value="${i.actualUnitPrice == null ? '' : esc(i.actualUnitPrice)}" placeholder="—" data-action="actual-price" data-id="${esc(i.id)}" aria-label="Harga aktual satuan ${esc(i.name)}"></div>
+          <div class="shop-price"><small>Harga/satuan</small><input class="mini-input" type="text" data-money inputmode="numeric" value="${i.actualUnitPrice == null ? '' : esc(Number(i.actualUnitPrice).toLocaleString('id-ID'))}" placeholder="—" data-action="actual-price" data-id="${esc(i.id)}" aria-label="Harga aktual per satuan ${esc(i.name)}"></div>
           <div class="shop-tools">
             <button class="btn-icon btn-icon-sm" type="button" data-action="shop-to-stock" data-id="${esc(i.id)}" aria-label="Tambah ${esc(i.name)} ke stok" title="Tambah ke stok">${ic('box', 16)}</button>
             <button class="btn-icon btn-icon-sm" type="button" data-action="edit-shop" data-id="${esc(i.id)}" aria-label="Edit item">${ic('edit', 16)}</button>
             <button class="btn-icon btn-icon-sm danger" type="button" data-action="delete-shop" data-id="${esc(i.id)}" aria-label="Hapus item">${ic('trash', 16)}</button>
           </div>
-          ${subtotalAct ? `<span class="shop-subtotal">Aktual ${esc(Utils.rupiah(subtotalAct))}</span>` : ''}
+          <span class="shop-subtotal" data-actual-subtotal="${esc(i.id)}">${subtotalAct ? `Aktual ${esc(Utils.rupiah(subtotalAct))}` : 'Harga aktual belum diisi'}</span>
         </div>`;
       }).join('');
       return `<section class="card">
@@ -573,23 +630,23 @@ const Pages = (() => {
 
     return `
       <div class="stack">
-        ${UI.pageHead('Anggaran Rp50.000', 'Belanja', 'Rencanakan pembelian buah mingguan dan catat harga sebenarnya.', `
+        ${UI.pageHead(`Anggaran ${Utils.rupiah(totals.budget)}`, 'Belanja', 'Rencanakan pembelian buah mingguan dan catat harga sebenarnya.', `
           <button class="btn-icon" type="button" data-action="toggle-budget-lock" aria-label="${budgetLocked ? 'Buka kunci anggaran' : 'Kunci anggaran'}" title="${budgetLocked ? 'Buka kunci anggaran' : 'Kunci anggaran'}">${UI.lockIcon(budgetLocked)}</button>
           <button class="btn btn-ghost btn-sm" type="button" data-action="edit-budget">${ic('settings', 16)} Atur anggaran</button>`)}
         ${shoppingStepper(items)}
 
-        <section class="card budget-card ${totals.over ? 'is-over' : ''}">
+        <section class="card budget-card ${totals.over ? 'is-over' : ''}" id="budget-card">
           <div class="budget-hero">
-            <div><span class="eyebrow">Sisa anggaran</span><strong class="${totals.remaining < 0 ? 'text-danger' : ''}">${esc(Utils.rupiah(totals.remaining))}</strong></div>
+            <div><span class="eyebrow">Sisa anggaran</span><strong id="budget-remaining" class="${totals.remaining < 0 ? 'text-danger' : ''}">${esc(Utils.rupiah(totals.remaining))}</strong></div>
             <div class="budget-total">dari ${esc(Utils.rupiah(totals.budget))}</div>
           </div>
-          ${UI.bar(totals.budget ? (totals.actual / totals.budget) * 100 : 0, totals.actual > totals.budget ? 'danger' : 'primary', 'Penggunaan anggaran buah')}
+          <div id="budget-bar">${UI.bar(totals.budget ? (totals.actual / totals.budget) * 100 : 0, totals.actual > totals.budget ? 'danger' : 'primary', 'Penggunaan anggaran buah')}</div>
           <div class="budget-stats">
-            <div><span>Estimasi</span><strong>${esc(Utils.rupiah(totals.estimated))}</strong></div>
-            <div><span>Aktual terpakai</span><strong>${esc(Utils.rupiah(totals.actual))}</strong></div>
-            <div><span>Sudah dibeli</span><strong>${items.filter((i) => i.isPurchased).length}/${items.length} item</strong></div>
+            <div><span>Estimasi</span><strong id="budget-estimated">${esc(Utils.rupiah(totals.estimated))}</strong></div>
+            <div><span>Aktual terpakai</span><strong id="budget-actual">${esc(Utils.rupiah(totals.actual))}</strong></div>
+            <div><span>Sudah dibeli</span><strong id="budget-bought">${items.filter((i) => i.isPurchased).length}/${items.length} item</strong></div>
           </div>
-          ${totals.over ? `<div class="alert alert-warn">${ic('alert', 18)} <span>Pengeluaran atau estimasi melebihi anggaran. Pertimbangkan menyesuaikan daftar sebelum membeli.</span></div>` : ''}
+          <div id="budget-over">${totals.over ? `<div class="alert alert-warn">${ic('alert', 18)} <span>Pengeluaran atau estimasi melebihi anggaran. Pertimbangkan menyesuaikan daftar sebelum membeli.</span></div>` : ''}</div>
         </section>
 
         ${sessionCards}
@@ -605,12 +662,18 @@ const Pages = (() => {
   function pengaturan() {
     const s = S();
     const n = s.settings.notifications;
+    const backupAge = Store.backupAgeDays();
+    const backupText = backupAge == null
+      ? 'Belum pernah mengekspor cadangan. Lakukan minimal setiap 14 hari.'
+      : backupAge > 14
+        ? `Cadangan terakhir: ${backupAge} hari lalu. Segera ekspor data Anda.`
+        : `Cadangan terakhir: ${backupAge === 0 ? 'hari ini' : backupAge + ' hari lalu'}.`;
+    const budgetLocked = !!s.settings.budgetLocked;
     const f = (label, name, opts) => UI.field(label, name, opts);
     const profile = UI.formGrid([
       f('Nama panggilan', 'name', { value: s.settings.name, placeholder: 'Nama Anda' }),
-      f('Tema', 'theme', { type: 'select', value: s.settings.theme, options: [{ value: 'light', label: 'Terang' }, { value: 'dark', label: 'Gelap' }] }),
-      f('Zona waktu', 'timezone', { value: s.settings.timezone, help: 'Disimpan sebagai preferensi (WIB default).' }),
-      f('Anggaran buah per minggu (Rp)', 'weeklyBudget', { type: 'number', min: 0, step: 1000, value: s.settings.weeklyBudget, required: true }),
+      f('Tema', 'theme', { type: 'select', value: s.settings.theme, options: [{ value: 'system', label: 'Ikuti perangkat' }, { value: 'light', label: 'Terang' }, { value: 'dark', label: 'Gelap' }], help: 'Default mengikuti pengaturan tema perangkat.' }),
+      f('Anggaran buah per minggu (Rp)', 'weeklyBudget', { type: 'text', value: Number(s.settings.weeklyBudget).toLocaleString('id-ID'), required: true, attrs: `${budgetLocked ? 'disabled' : ''} data-money inputmode="numeric"`, full: true, help: budgetLocked ? 'Anggaran terkunci. Buka kunci di halaman Belanja untuk mengubah.' : 'Maksimal pengeluaran buah per minggu.' }),
       f('Target porsi buah per hari', 'dailyFruitTarget', { type: 'number', min: 1, max: 10, value: s.settings.dailyFruitTarget, required: true }),
       f('Kunci anggaran', 'budgetLocked', { type: 'checkbox', checked: !!s.settings.budgetLocked, help: 'Mencegah perubahan anggaran tidak sengaja dari halaman Belanja.' }),
       f('Target seminar proposal', 'seminarDate', { type: 'date', value: s.settings.seminarDate, help: 'Kosongkan jika belum ditentukan.' }),
@@ -640,10 +703,10 @@ const Pages = (() => {
     ]);
 
     const notif = UI.formGrid([
-      f('Aktifkan pengingat', 'notifEnabled', { type: 'checkbox', checked: n.enabled, help: 'Notifikasi dalam aplikasi tetap tampil walau izin browser belum diberikan.' }),
+      f('Aktifkan pengingat', 'notifEnabled', { type: 'checkbox', checked: n.enabled, help: 'Bila izin browser belum diberikan, pengingat tetap tampil sebagai notifikasi di dalam aplikasi.' }),
       f('Pengingat aktivitas', 'notifActivity', { type: 'checkbox', checked: n.activity }),
       f('Pengingat konsumsi buah', 'notifFruit', { type: 'checkbox', checked: n.fruit }),
-      f('Pengingat belanja Minggu & Rabu', 'notifShopping', { type: 'checkbox', checked: n.shopping }),
+      f(`Pengingat belanja ${Utils.dayName(s.settings.shoppingDays.main, true)} & ${Utils.dayName(s.settings.shoppingDays.refill, true)}`, 'notifShopping', { type: 'checkbox', checked: n.shopping }),
       f('Peringatan stok perlu dikonsumsi', 'notifLowStock', { type: 'checkbox', checked: n.lowStock }),
       f('Pengingat persiapan tidur', 'notifBedtime', { type: 'checkbox', checked: n.bedtime }),
       f('Waktu sebelum aktivitas (menit)', 'activityLeadMinutes', { type: 'number', min: 0, max: 60, value: n.activityLeadMinutes })
@@ -651,8 +714,12 @@ const Pages = (() => {
 
     return `
       <div class="stack">
-        ${UI.pageHead('Preferensi aplikasi', 'Pengaturan', 'Semua perubahan tersimpan otomatis di perangkat ini.', `<button class="btn btn-primary btn-sm" type="button" data-action="save-settings-form">Simpan pengaturan</button>`)}
+        ${UI.pageHead('Preferensi aplikasi', 'Pengaturan', 'Perubahan disimpan setelah menekan tombol Simpan pengaturan.')}
         <form id="settings-form">
+          <div class="settings-savebar">
+            <span class="hint">Perubahan belum tersimpan sampai ditekan.</span>
+            <button class="btn btn-primary btn-sm" type="submit">Simpan pengaturan</button>
+          </div>
           <section class="card">
             ${UI.section('Profil & target', 'Identitas, target harian, dan anggaran')}
             ${profile}
@@ -676,21 +743,30 @@ const Pages = (() => {
             <div class="card-foot notif-foot">
               <button class="btn btn-soft btn-sm" type="button" data-action="request-notif">${ic('bell', 16)} Aktifkan notifikasi browser</button>
               <span id="notif-status" class="hint"></span>
-              <p class="hint">Jika izin ditolak, buka ikon gembok di bilah alamat browser → izinkan Notifikasi, lalu muat ulang halaman. Pengingat belanja dan jadwal tetap tampil di dashboard tanpa izin tersebut.</p>
+              <p class="hint">Jika izin ditolak, buka ikon gembok di bilah alamat browser → izinkan Notifikasi, lalu muat ulang halaman. Pengingat tetap tampil di dalam aplikasi tanpa izin tersebut. Untuk pengingat saat aplikasi tertutup, ekspor jadwal kalender di bagian Data &amp; cadangan.</p>
             </div>
           </section>
         </form>
 
-        <section class="card">
-          ${UI.section('Data & cadangan', 'Ekspor, impor, atau kembalikan ke data awal')}
+        <section class="card" id="data-cadangan">
+          ${UI.section('Data & cadangan', 'Ekspor, impor, atau pulihkan data')}
           <div class="data-actions">
             <button class="btn btn-soft btn-sm" type="button" data-action="export-data">${UI.downloadIcon()} Ekspor JSON</button>
             <button class="btn btn-soft btn-sm" type="button" data-action="export-md">${UI.downloadIcon()} Ekspor ringkasan MD</button>
+            <button class="btn btn-soft btn-sm" type="button" data-action="export-ics">${UI.downloadIcon()} Ekspor jadwal kalender</button>
             <button class="btn btn-soft btn-sm" type="button" data-action="import-trigger">${ic('download', 16)} Impor JSON</button>
+          </div>
+          <p class="hint" id="last-backup-note">${esc(backupText)}</p>
+          <p class="hint">Data disimpan di browser perangkat ini. Berkas ekspor berisi catatan pribadi—simpan di lokasi privat dan jangan diunggah ke tempat publik.</p>
+        </section>
+
+        <section class="card danger-zone">
+          ${UI.section('Zona berbahaya', 'Pulihkan cadangan atau kembalikan ke data awal')}
+          <div class="data-actions">
+            <button class="btn btn-soft btn-sm" type="button" data-action="restore-import">${ic('history', 16)} Pulihkan cadangan pra-impor</button>
             <button class="btn btn-danger-ghost btn-sm" type="button" data-action="reset-data">${ic('trash', 16)} Kembalikan data awal</button>
           </div>
-          <input type="file" id="import-file" accept="application/json,.json" hidden>
-          <p class="hint">Data disimpan pada localStorage browser perangkat ini. Ekspor berkala disarankan sebagai cadangan.</p>
+          <p class="hint">Cadangan pra-impor dibuat otomatis sebelum setiap impor. Mengembalikan data awal menghapus seluruh catatan Anda.</p>
         </section>
       </div>`;
   }
@@ -727,6 +803,8 @@ const Pages = (() => {
         set('name', fruit.name);
         set('unit', unit || 'gram');
         set('estimatedServings', 3);
+        set('servingSize', amount);
+        set('servingUnit', /gram/i.test(unit) ? 'gram' : 'buah');
         set('quantityPurchased', /gram/i.test(unit) ? Math.max(500, amount * 3) : 1);
         set('quantityRemaining', /gram/i.test(unit) ? Math.max(500, amount * 3) : 1);
         set('storageLocation', /suhu ruang|matang/i.test(fruit.storage) ? 'Suhu ruang' : 'Kulkas');
@@ -754,7 +832,8 @@ const Pages = (() => {
         field('Hari', 'dayOfWeek', { type: 'select', value: a.dayOfWeek || day || Utils.dow(new Date()), options: [1, 2, 3, 4, 5, 6, 7].map((d) => ({ value: d, label: Utils.dayName(d) })) }),
         field('Mulai', 'startTime', { type: 'time', value: Utils.fmtTimeColon(a.startTime || '07.00'), required: true }),
         field('Selesai', 'endTime', { type: 'time', value: Utils.fmtTimeColon(a.endTime || '08.00'), required: true }),
-        field('Berulang tiap minggu', 'isRecurring', { type: 'checkbox', checked: a.isRecurring !== false }),
+        field('Berulang tiap minggu', 'isRecurring', { type: 'checkbox', checked: a.isRecurring !== false, help: 'Nonaktifkan untuk aktivitas sekali jadi pada tanggal tertentu.' }),
+        field('Tanggal khusus', 'date', { type: 'date', value: a.date || '', help: 'Wajib diisi bila tidak berulang.' }),
         field('Catatan', 'notes', { type: 'textarea', value: a.notes || '', full: true, rows: 2 })
       ]),
       onSubmit(form, data) {
@@ -766,11 +845,17 @@ const Pages = (() => {
           startTime: data.get('startTime'),
           endTime: data.get('endTime'),
           isRecurring: data.get('isRecurring') === 'on',
+          date: String(data.get('date') || ''),
           notes: String(data.get('notes') || '').trim(),
-          isTemplate: a.isTemplate || false
+          isTemplate: a.isTemplate || false,
+          userEdited: true
         };
         if (!payload.title) { UI.toast('Nama aktivitas wajib diisi.', 'error'); return false; }
-        if (Utils.parseTime(payload.endTime) <= Utils.parseTime(payload.startTime)) { UI.toast('Waktu selesai harus setelah waktu mulai.', 'error'); return false; }
+        if (!payload.isRecurring && !payload.date) { UI.toast('Isi tanggal khusus untuk aktivitas sekali jadi.', 'error'); return false; }
+        const start = Utils.parseTime(payload.startTime);
+        const end = Utils.parseTime(payload.endTime);
+        if (start == null || end == null) { UI.toast('Waktu mulai dan selesai wajib diisi.', 'error'); return false; }
+        if (end === start) { UI.toast('Waktu selesai harus berbeda dengan waktu mulai.', 'error'); return false; }
         Store.update((s) => {
           const idx = s.activities.findIndex((x) => x.id === payload.id);
           if (idx >= 0) s.activities[idx] = payload; else s.activities.push(payload);
@@ -792,14 +877,30 @@ const Pages = (() => {
         field('Ambil dari stok', 'inventoryId', { type: 'select', value: preset.inventoryId || '', options: [{ value: '', label: 'Tidak hubungkan dengan stok' }].concat(inv.map((i) => ({ value: i.id, label: `${i.name} — sisa ${i.quantityRemaining} ${i.unit}` }))), full: true }),
         field('Tanggal', 'date', { type: 'date', value: Utils.dateKey(new Date()), required: true }),
         field('Catatan', 'notes', { type: 'textarea', value: '', rows: 2 })
-      ]),
-      onOpen(d) { if (!preset.fruitId && !preset.inventoryId) bindFruitAutofill(d, 'consume'); },
+      ]) + '<p class="hint stock-preview" id="stock-use-preview">Pilih stok untuk melihat pratinjau.</p>',
+      onOpen(d) {
+        if (!preset.fruitId && !preset.inventoryId) bindFruitAutofill(d, 'consume');
+        const form = d.querySelector('#modal-form');
+        const stockSel = form?.elements.inventoryId;
+        const countEl = form?.elements.servingCount;
+        const preview = d.querySelector('#stock-use-preview');
+        const update = () => {
+          const stock = Store.state.inventory.find((i) => i.id === stockSel?.value);
+          preview.textContent = stock
+            ? `Stok akan berkurang ${Store.stockUseLabel(stock, countEl?.value || 1)}.`
+            : 'Tidak ada stok yang dikurangi.';
+        };
+        stockSel?.addEventListener('change', update);
+        countEl?.addEventListener('input', update);
+        update();
+      },
       onSubmit(form, data) {
         const fruit = Store.fruitById(data.get('fruitId'));
         const serving = Number(data.get('servingCount')) || 0;
         if (serving <= 0) { UI.toast('Jumlah porsi harus lebih dari 0.', 'error'); return false; }
         const invId = data.get('inventoryId');
         let linked = false;
+        let usedLabel = '';
         Store.update((s) => {
           s.consumption.push({
             id: Utils.uid('cons'), fruitId: fruit.id, name: fruit.name,
@@ -810,13 +911,13 @@ const Pages = (() => {
           if (invId) {
             const stock = s.inventory.find((i) => i.id === invId);
             if (stock && Number(stock.quantityRemaining) > 0) {
-              stock.quantityRemaining = Math.max(0, Number(stock.quantityRemaining) - 1);
-              if (stock.quantityRemaining === 0) stock.status = 'finished';
+              Store.deductStock(stock, serving); // F-01: 2 porsi × 150 g = 300 g
+              usedLabel = Store.stockUseLabel(stock, serving);
               linked = true;
             }
           }
         });
-        UI.toast(linked ? `Konsumsi tercatat, stok ${fruit.name} berkurang.` : 'Konsumsi tercatat tanpa perubahan stok.', linked ? 'success' : 'info');
+        UI.toast(linked ? `Konsumsi tercatat, stok ${fruit.name} berkurang ${usedLabel}.` : 'Konsumsi tercatat tanpa perubahan stok.', linked ? 'success' : 'info');
       }
     });
   }
@@ -833,6 +934,8 @@ const Pages = (() => {
         field('Sisa stok', 'quantityRemaining', { type: 'number', min: 0, step: 'any', value: st.quantityRemaining ?? 500, required: true }),
         field('Satuan', 'unit', { value: st.unit || 'gram', placeholder: 'gram / buah / porsi', required: true }),
         field('Perkiraan porsi', 'estimatedServings', { type: 'number', min: 0, step: 0.5, value: st.estimatedServings ?? 3 }),
+        field('Ukuran satu porsi', 'servingSize', { type: 'number', min: 0, step: 'any', value: st.servingSize ?? 150, help: 'Dipakai saat mencatat konsumsi agar stok turun sesuai porsi.' }),
+        field('Satuan satu porsi', 'servingUnit', { type: 'select', value: st.servingUnit || 'gram', options: [{ value: 'gram', label: 'gram' }, { value: 'buah', label: 'buah' }] }),
         field('Tanggal pembelian', 'purchaseDate', { type: 'date', value: st.purchaseDate || Utils.dateKey(new Date()) }),
         field('Lokasi penyimpanan', 'storageLocation', { type: 'select', value: st.storageLocation || 'Kulkas', options: ['Kulkas', 'Suhu ruang'] }),
         field('Kondisi / kematangan', 'condition', { value: st.condition || '', placeholder: 'Contoh: Agak keras' }),
@@ -846,6 +949,7 @@ const Pages = (() => {
           id: st.id || Utils.uid('inv'), fruitId: fruit.id, name: String(data.get('name') || fruit.name).trim(),
           quantityPurchased: Number(data.get('quantityPurchased')) || 0, quantityRemaining: remaining,
           unit: String(data.get('unit') || 'buah').trim(), estimatedServings: Number(data.get('estimatedServings')) || 0,
+          servingSize: Math.max(0, Number(data.get('servingSize')) || 0), servingUnit: data.get('servingUnit') || 'gram',
           purchaseDate: data.get('purchaseDate'), storageLocation: data.get('storageLocation'),
           condition: String(data.get('condition') || '').trim(), status: remaining <= 0 ? 'finished' : data.get('status')
         };
@@ -909,12 +1013,16 @@ const Pages = (() => {
         field('Catatan progres', 'notes', { type: 'textarea', value: t.notes || '', full: true, rows: 2 })
       ]),
       onSubmit(form, data) {
+        const payloadStatus = data.get('status');
         const payload = {
           id: t.id || Utils.uid('task'), title: String(data.get('title') || '').trim(),
           description: String(data.get('description') || '').trim(), priority: data.get('priority'),
-          status: data.get('status'), dueDate: data.get('dueDate') || '',
+          status: payloadStatus, dueDate: data.get('dueDate') || '',
           notes: String(data.get('notes') || '').trim(), order: t.order || (S().tasks.length + 1),
-          completedAt: t.completedAt || ''
+          // F-03: riwayat penyelesaian mengikuti status, bukan jalur tombol centang.
+          completedAt: payloadStatus === 'completed'
+            ? (t.status === 'completed' && t.completedAt ? t.completedAt : new Date().toISOString())
+            : ''
         };
         if (!payload.title) { UI.toast('Nama tugas wajib diisi.', 'error'); return false; }
         Store.update((s) => {
@@ -964,8 +1072,15 @@ const Pages = (() => {
     'edit-activity'(el) { openActivityModal(S().activities.find((a) => a.id === el.dataset.id)); },
     async 'delete-activity'(el) {
       const a = S().activities.find((x) => x.id === el.dataset.id);
-      if (!a || !(await UI.confirm('Hapus aktivitas?', `“${a.title}” akan dihapus dari template jadwal. Riwayat checklist yang sudah tercatat tetap disimpan.`, 'Hapus'))) return;
-      Store.update((s) => { s.activities = s.activities.filter((x) => x.id !== a.id); });
+      if (!a || !(await UI.confirm('Hapus aktivitas?', `“${a.title}” akan dihapus dari jadwal. Riwayat checklist yang sudah tercatat tetap disimpan.`, 'Hapus'))) return;
+      Store.update((s) => {
+        s.activities = s.activities.filter((x) => x.id !== a.id);
+        // F-07: ingat template yang sengaja dihapus agar tidak muncul lagi saat "Terapkan".
+        if (a.isTemplate) {
+          s.deletedTemplateIds = s.deletedTemplateIds || [];
+          if (!s.deletedTemplateIds.includes(a.id)) s.deletedTemplateIds.push(a.id);
+        }
+      });
       UI.toast('Aktivitas dihapus.');
     },
     'week-prev'() { viewDate = Utils.addDays(viewDate, -7); document.dispatchEvent(new CustomEvent('app:force-render')); },
@@ -984,6 +1099,17 @@ const Pages = (() => {
 
     'add-task'() { openTaskModal(); },
     'edit-task'(el) { openTaskModal(S().tasks.find((t) => t.id === el.dataset.id)); },
+    // F-17: aksi cepat memulai tugas, mengisi "tahap saat ini" tanpa membuka modal.
+    'start-task'(el) {
+      const id = el.dataset.id;
+      const task = S().tasks.find((t) => t.id === id);
+      if (!task || task.status === 'completed') return;
+      Store.update((s) => {
+        const t = s.tasks.find((x) => x.id === id);
+        if (t) t.status = 'in-progress';
+      });
+      UI.toast(`Mulai mengerjakan: ${task.title}`);
+    },
     'toggle-task'(el) {
       const id = el.dataset.id;
       Store.update((s) => {
@@ -1011,6 +1137,10 @@ const Pages = (() => {
     'edit-seminar'() { openSeminarModal(); },
 
     'open-consume'() { openConsumeModal(); },
+    // F-12: tombol preset mengisi jumlah porsi di modal, bukan menambah langsung.
+    'open-consume-preset'(el) {
+      openConsumeModal({ servingCount: Number(el.dataset.preset) || 1 });
+    },
     'log-planned'(el) {
       openConsumeModal({ fruitId: el.dataset.fruit, label: el.dataset.label, servingCount: 1 });
     },
@@ -1021,10 +1151,9 @@ const Pages = (() => {
       if (!item) return;
       Store.update((s) => {
         const st = s.inventory.find((i) => i.id === item.id);
-        st.quantityRemaining = Math.max(0, Number(st.quantityRemaining) - 1);
-        if (st.quantityRemaining === 0) st.status = 'finished';
+        Store.deductStock(st, 1); // F-01/V-17: satu porsi, bukan satu satuan
       });
-      UI.toast(`Stok ${item.name} dikurangi 1 ${item.unit}.`);
+      UI.toast(`Stok ${item.name} dikurangi ${Store.stockUseLabel(item, 1)} (1 porsi).`);
     },
     async 'mark-spoiled'(el) {
       const item = S().inventory.find((i) => i.id === el.dataset.id);
@@ -1036,6 +1165,13 @@ const Pages = (() => {
         st.condition = 'Rusak / terbuang';
       });
       UI.toast(`${item.name} ditandai rusak/terbuang.`, 'info');
+    },
+    async 'remove-samples'() {
+      const count = S().inventory.filter((i) => i.isSample).length;
+      if (!count) return;
+      if (!(await UI.confirm('Hapus stok contoh?', `${count} item contoh akan dihapus. Stok dan riwayat yang Anda buat sendiri tidak tersentuh.`, 'Hapus contoh'))) return;
+      Store.update((s) => { s.inventory = s.inventory.filter((i) => !i.isSample); });
+      UI.toast(`${count} stok contoh dihapus.`);
     },
     async 'delete-stock'(el) {
       const item = S().inventory.find((i) => i.id === el.dataset.id);
@@ -1059,6 +1195,8 @@ const Pages = (() => {
         fruitId: item.fruitId, name: item.name,
         quantityPurchased: item.quantity, quantityRemaining: item.quantity,
         unit: item.unit, estimatedServings: Math.max(1, item.quantity),
+        servingSize: fruit && /gram/i.test(fruit.defaultServing) ? parseInt(fruit.defaultServing, 10) || 150 : 1,
+        servingUnit: fruit && /gram/i.test(fruit.defaultServing) ? 'gram' : 'buah',
         purchaseDate: item.shoppingDate || Utils.dateKey(new Date()),
         storageLocation: 'Kulkas', condition: 'Baru dibeli', status: 'available'
       });
@@ -1071,9 +1209,17 @@ const Pages = (() => {
         if (!item) return;
         item.isPurchased = !item.isPurchased;
         item.shoppingDate = item.isPurchased ? Utils.dateKey(new Date()) : '';
-        if (item.isPurchased && item.actualUnitPrice == null) item.actualUnitPrice = item.estimatedUnitPrice;
+        // F-09: jangan mengisi harga aktual dari estimasi; itu memalsukan pengeluaran.
       });
-      UI.toast('Status pembelian diperbarui.');
+      const bought = S().shopping.find((i) => i.id === id)?.isPurchased;
+      if (bought && S().shopping.find((i) => i.id === id)?.actualUnitPrice == null) {
+        // U-07: arahkan pengguna mengisi harga, fokus ke input baris yang sama.
+        const input = document.querySelector(`[data-action="actual-price"][data-id="${CSS.escape(id)}"]`);
+        if (input) { input.focus(); input.select(); }
+        UI.toast('Tandai dibeli. Isi harga aktual per satuan bila sudah diketahui.', 'info');
+      } else {
+        UI.toast('Status pembelian diperbarui.');
+      }
     },
     async 'delete-shop'(el) {
       const item = S().shopping.find((i) => i.id === el.dataset.id);
@@ -1098,7 +1244,8 @@ const Pages = (() => {
         btn.setAttribute('title', next ? 'Buka kunci anggaran' : 'Kunci anggaran');
         setTimeout(() => btn.classList.remove('just-unlocked', 'just-locked'), 600);
       }
-      UI.toast(next ? 'Anggaran dibuka.' : 'Anggaran dikunci.', next ? 'info' : 'success');
+      // F-05: next = true berarti baru dikunci. Teks mengikuti keadaan akhir.
+      UI.toast(next ? 'Anggaran dikunci.' : 'Anggaran dibuka.', next ? 'success' : 'info');
     },
     'reminder-done'(el) { Store.setReminder(el.dataset.session, 'done'); UI.toast('Pengingat ditandai selesai.'); },
     'reminder-postpone'(el) { Store.setReminder(el.dataset.session, 'postponed'); UI.toast('Pengingat ditunda.', 'info'); },
@@ -1106,14 +1253,23 @@ const Pages = (() => {
 
     'save-settings-form'() { saveSettings(); },
     async 'apply-template'() {
-      const ok = await UI.confirm('Terapkan template jadwal?', 'Waktu aktivitas bawaan akan diperbarui sesuai pengaturan. Aktivitas buatan sendiri dan riwayat checklist tidak dihapus.', 'Terapkan');
+      const s = S();
+      const deleted = new Set(s.deletedTemplateIds || []);
+      const editable = s.activities.filter((a) => a.isTemplate && !a.userEdited && !deleted.has(a.id));
+      const skipped = s.activities.filter((a) => a.isTemplate && (a.userEdited || deleted.has(a.id))).length;
+      const ok = await UI.confirm(
+        'Terapkan template jadwal?',
+        `${editable.length} aktivitas bawaan akan diperbarui, ${skipped} dilewati (telah diubah atau dihapus). Aktivitas buatan sendiri dan riwayat checklist tidak tersentuh.`,
+        'Terapkan'
+      );
       if (!ok) return;
       saveSettings(true);
-      Store.update((s) => {
-        const fresh = Seed.buildActivities(s.settings);
-        s.activities = fresh.concat(s.activities.filter((a) => !a.isTemplate));
+      Store.update((state) => {
+        const fresh = Seed.buildActivities(state.settings);
+        const keep = state.activities.filter((a) => !a.isTemplate || a.userEdited || deleted.has(a.id));
+        state.activities = fresh.filter((a) => !deleted.has(a.id)).concat(keep);
       });
-      UI.toast('Template jadwal diterapkan.');
+      UI.toast(`Template diterapkan. ${skipped} aktivitas dilewati.`);
     },
     async 'request-notif'() {
       if (!('Notification' in window)) { UI.toast('Browser ini tidak mendukung notifikasi.', 'error'); return; }
@@ -1122,10 +1278,15 @@ const Pages = (() => {
       UI.toast(perm === 'granted' ? 'Notifikasi browser diaktifkan.' : 'Izin notifikasi belum diberikan. Pengingat tetap tampil di aplikasi.', perm === 'granted' ? 'success' : 'info');
     },
     'export-data'() {
-      Utils.downloadFile('rutin-buah-cadangan.json', Store.exportData(), 'application/json');
+      Store.markBackup();
+      const json = Store.exportData();
+      Utils.downloadFile('rutin-buah-cadangan.json', json, 'application/json');
+      const note = document.getElementById('last-backup-note');
+      if (note) note.textContent = 'Cadangan terakhir: hari ini.';
       UI.toast('Data diekspor.');
     },
     'export-md'() { exportMarkdown(); },
+    'export-ics'() { exportICS(); }, // N-01.2: pengingat kalender tanpa tab terbuka
     'import-trigger'() { document.getElementById('import-file').click(); },
     async 'reset-data'() {
       const ok = await UI.confirm('Kembalikan data awal?', 'Seluruh aktivitas, catatan, stok, dan riwayat akan diganti dengan data bawaan. Ekspor data terlebih dahulu jika ingin menyimpannya.', 'Ya, kembalikan');
@@ -1153,12 +1314,14 @@ const Pages = (() => {
     const d = new FormData(form);
     const bool = (k) => d.get(k) === 'on';
     const themeChanged = d.get('theme') !== S().settings.theme;
+    const rawBudget = d.get('weeklyBudget');
+    const budget = rawBudget == null ? null : Number(String(rawBudget).replace(/\./g, '').replace(/[^\d]/g, ''));
     Store.update((s) => {
       const st = s.settings;
       st.name = String(d.get('name') || '').trim();
-      st.theme = d.get('theme') === 'dark' ? 'dark' : 'light';
-      st.timezone = String(d.get('timezone') || 'Asia/Jakarta').trim();
-      st.weeklyBudget = Number(d.get('weeklyBudget')) || 0;
+      st.theme = ['system', 'light', 'dark'].includes(d.get('theme')) ? d.get('theme') : 'system';
+      // F-05: field terkunci tidak dikirim FormData; pertahankan nilai lama.
+      if (budget != null && Number.isFinite(budget)) st.weeklyBudget = budget;
       st.budgetLocked = bool('budgetLocked');
       st.dailyFruitTarget = Utils.clamp(Number(d.get('dailyFruitTarget')) || 2, 1, 10);
       st.seminarDate = d.get('seminarDate') || '';
@@ -1183,7 +1346,7 @@ const Pages = (() => {
         shoppingTimeRefill: d.get('shoppingTimeRefill') || '09.00'
       };
     });
-    document.documentElement.dataset.theme = S().settings.theme;
+    // Tema diterapkan oleh app.js lewat event app:changed (termasuk resolusi 'system').
     if (themeChanged) UI.themeTransition();
     updateNotifStatus();
     if (!silent) UI.toast('Pengaturan disimpan.');
@@ -1204,7 +1367,7 @@ const Pages = (() => {
       '# Ringkasan Rutin & Buah', '',
       `Diekspor: ${Utils.formatDate(new Date())}`, '',
       `## Progres hari ini`, `- Aktivitas selesai: ${p.done}/${p.total} (${p.pct}%)`,
-      `- Buah: ${Store.servingsForDate(new Date())}/${Store.dailyTarget()} porsi`, '-', '',
+      `- Buah: ${Store.servingsForDate(new Date())}/${Store.dailyTarget()} porsi`, '',
       '## Skripsi', ...s.tasks.slice().sort((a, b) => (a.order || 0) - (b.order || 0)).map((t) => `- [${t.status === 'completed' ? 'x' : ' '}] ${t.title} (${t.priority})`), '',
       '## Stok buah', ...s.inventory.map((i) => `- ${i.name}: ${i.quantityRemaining} ${i.unit} (${i.status})`), '',
       '## Anggaran', `- Maksimal: ${Utils.rupiah(totals.budget)}`, `- Estimasi: ${Utils.rupiah(totals.estimated)}`, `- Aktual: ${Utils.rupiah(totals.actual)}`, `- Sisa: ${Utils.rupiah(totals.remaining)}`
@@ -1213,10 +1376,112 @@ const Pages = (() => {
     UI.toast('Ringkasan diekspor.');
   }
 
+  /** U-07: perbarui angka anggaran tanpa render ulang agar fokus input tidak hilang. */
+  function refreshShoppingTotals() {
+    const items = Store.currentWeekShopping();
+    const totals = Store.shoppingTotals(items);
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    setText('budget-remaining', Utils.rupiah(totals.remaining));
+    setText('budget-estimated', Utils.rupiah(totals.estimated));
+    setText('budget-actual', Utils.rupiah(totals.actual));
+    setText('budget-bought', `${items.filter((i) => i.isPurchased).length}/${items.length} item`);
+    const remaining = document.getElementById('budget-remaining');
+    if (remaining) remaining.classList.toggle('text-danger', totals.remaining < 0);
+    const bar = document.getElementById('budget-bar');
+    if (bar) bar.innerHTML = UI.bar(totals.budget ? (totals.actual / totals.budget) * 100 : 0, totals.actual > totals.budget ? 'danger' : 'primary', 'Penggunaan anggaran buah');
+    const card = document.getElementById('budget-card');
+    if (card) card.classList.toggle('is-over', totals.over);
+    const over = document.getElementById('budget-over');
+    if (over) over.innerHTML = totals.over
+      ? `<div class="alert alert-warn">${ic('alert', 18)} <span>Pengeluaran atau estimasi melebihi anggaran. Pertimbangkan menyesuaikan daftar sebelum membeli.</span></div>`
+      : '';
+    items.forEach((i) => {
+      const el = document.querySelector(`[data-actual-subtotal="${CSS.escape(i.id)}"]`);
+      if (!el) return;
+      const hasPrice = i.actualUnitPrice != null && i.actualUnitPrice !== '';
+      el.textContent = hasPrice
+        ? `Aktual ${Utils.rupiah((Number(i.quantity) || 0) * Number(i.actualUnitPrice))}`
+        : 'Harga aktual belum diisi';
+    });
+  }
+
+  /** N-01.2: ekspor kalender dengan VALARM agar pengingat tetap jalan tanpa tab terbuka. */
+  function exportICS() {
+    const s = S();
+    const stamp = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const local = (date, minutes) => {
+      const m = Utils.wrapMinutes(minutes);
+      return Utils.dateKey(date).replace(/-/g, '') + 'T' + Utils.pad(Math.floor(m / 60)) + Utils.pad(m % 60) + '00';
+    };
+    const icsEsc = (v) => String(v == null ? '' : v)
+      .replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+    const fold = (line) => {
+      if (line.length <= 70) return line;
+      const parts = [line.slice(0, 70)];
+      let rest = line.slice(70);
+      while (rest.length) { parts.push(' ' + rest.slice(0, 69)); rest = rest.slice(69); }
+      return parts.join('\r\n');
+    };
+    const lead = Math.max(0, Number(s.settings.notifications.activityLeadMinutes) || 0);
+    const alarm = (summary, minutes) => [
+      'BEGIN:VALARM', `TRIGGER:-PT${minutes}M`, 'ACTION:DISPLAY', `DESCRIPTION:${icsEsc(summary)}`, 'END:VALARM'
+    ];
+    const week = Utils.weekDates(new Date());
+    const lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Rutin Buah//Planner//ID', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'BEGIN:VTIMEZONE', 'TZID:Asia/Jakarta', 'BEGIN:STANDARD', 'DTSTART:19700101T000000',
+      'TZOFFSETFROM:+0700', 'TZOFFSETTO:+0700', 'TZNAME:WIB', 'END:STANDARD', 'END:VTIMEZONE'
+    ];
+    s.activities.forEach((a) => {
+      const start = Utils.parseTime(a.startTime);
+      const end = Utils.parseTime(a.endTime);
+      if (start == null || end == null) return;
+      const date = a.date && !a.isRecurring ? Utils.fromKey(a.date) : week[Utils.dow(a.dayOfWeek) - 1];
+      if (!date) return;
+      const summary = a.title;
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:${icsEsc(a.id)}@rutin-buah`,
+        `DTSTAMP:${stamp(new Date())}`,
+        `DTSTART;TZID=Asia/Jakarta:${local(date, start)}`,
+        `DTEND;TZID=Asia/Jakarta:${local(date, end)}`,
+        `SUMMARY:${icsEsc(summary)}`,
+        `DESCRIPTION:${icsEsc([a.category, a.notes].filter(Boolean).join(' · '))}`,
+        ...(a.isRecurring !== false ? [`RRULE:FREQ=WEEKLY;BYDAY=${['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][Utils.dow(a.dayOfWeek) - 1]}`] : []),
+        ...alarm('Segera: ' + summary, lead || 1),
+        'END:VEVENT'
+      );
+    });
+    const shoppingDays = [
+      { day: Number(s.settings.shoppingDays.main) || 7, label: 'Belanja utama' },
+      { day: Number(s.settings.shoppingDays.refill) || 3, label: 'Belanja ulang buah segar' }
+    ];
+    shoppingDays.forEach((x) => {
+      const date = week[x.day - 1];
+      const m = Utils.parseTime(x.day === Number(s.settings.shoppingDays.main) ? s.settings.notifications.shoppingTimeMain : s.settings.notifications.shoppingTimeRefill);
+      if (!date || m == null) return;
+      lines.push(
+        'BEGIN:VEVENT',
+        `UID:shop-${x.day}@rutin-buah`,
+        `DTSTAMP:${stamp(new Date())}`,
+        `DTSTART;TZID=Asia/Jakarta:${local(date, m)}`,
+        `DTEND;TZID=Asia/Jakarta:${local(date, m + 30)}`,
+        `SUMMARY:${icsEsc(x.label)}`,
+        'RRULE:FREQ=WEEKLY;BYDAY=' + ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'][x.day - 1],
+        ...alarm(x.label, 30),
+        'END:VEVENT'
+      );
+    });
+    lines.push('END:VCALENDAR');
+    Utils.downloadFile('rutin-buah-jadwal.ics', lines.map(fold).join('\r\n') + '\r\n', 'text/calendar;charset=utf-8');
+    UI.toast('Jadwal kalender diekspor.');
+  }
+
   return {
     dashboard, jadwal, skripsi, buah, belanja, pengaturan,
     Actions, openActivityModal, openConsumeModal, openStockModal, openShopModal, openTaskModal,
-    saveSettings, updateNotifStatus, exportMarkdown, setViewDate: (d) => { viewDate = new Date(d); },
+    saveSettings, updateNotifStatus, exportMarkdown, exportICS, refreshShoppingTotals,
+    setViewDate: (d) => { viewDate = new Date(d); },
     getViewDate: () => viewDate, filterActivities, afterRender
   };
 })();

@@ -3,34 +3,41 @@ const UI = (() => {
   const esc = Utils.escapeHtml;
   const ic = Utils.icon;
   let modalState = null;
-  let toastTimer = null;
   let themeTimer = null;
 
+  /** F-04: timer milik masing-masing toast, bukan satu timer global. */
   function toast(message, type = 'success') {
     const root = document.getElementById('toast-root');
+    if (!root) return;
     const el = document.createElement('div');
     el.className = 'toast toast-' + type;
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
     const iconName = type === 'error' ? 'alert' : type === 'info' ? 'info' : 'check';
     el.innerHTML = ic(iconName, 18) + `<span>${esc(message)}</span>`;
+    el.title = 'Tutup notifikasi';
     root.appendChild(el);
+    while (root.children.length > 3) root.firstElementChild.remove();
     requestAnimationFrame(() => el.classList.add('is-visible'));
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => {
+    const remove = () => {
       el.classList.remove('is-visible');
       setTimeout(() => el.remove(), 250);
-    }, 3200);
+    };
+    const timer = setTimeout(remove, type === 'error' ? 6000 : 3200);
+    el.addEventListener('click', () => { clearTimeout(timer); remove(); });
   }
 
   const dialog = () => document.getElementById('modal');
 
   function openModal({ title, body = '', submitLabel = 'Simpan', cancelLabel = 'Batal', onSubmit, onOpen, size = '' }) {
     const d = dialog();
-    modalState = { onSubmit, resolver: null };
+    const trigger = document.activeElement;
+    modalState = { onSubmit, resolver: null, trigger, dirty: false, onClose: null };
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = body;
     document.getElementById('modal-label').textContent = submitLabel;
-    document.getElementById('modal-submit').classList.remove('is-sending');
-    document.getElementById('modal-submit').disabled = false;
+    const submit = document.getElementById('modal-submit');
+    submit.classList.remove('is-sending');
+    submit.disabled = false;
     document.getElementById('modal-cancel').textContent = cancelLabel;
     d.className = 'modal' + (size ? ' modal-' + size : '');
     if (onOpen) onOpen(d);
@@ -43,7 +50,24 @@ const UI = (() => {
   function closeModal() {
     const d = dialog();
     if (d.open) d.close();
+    else releaseModal();
+  }
+
+  function releaseModal() {
+    const d = dialog();
+    if (!modalState) {
+      document.body.classList.remove('has-modal');
+      return;
+    }
+    const { resolver, onClose, trigger } = modalState;
+    modalState = null;
+    if (onClose) onClose();
+    if (resolver) resolver(false); // U-05: promise selalu selesai.
     document.body.classList.remove('has-modal');
+    // Elemen pemicu bisa diganti render; jatuhkan fokus ke area aplikasi.
+    if (trigger && trigger.isConnected) trigger.focus();
+    else document.getElementById('app')?.focus();
+    d.removeAttribute('data-dirty');
   }
 
   function confirm(title, message, submitLabel = 'Ya, lanjutkan') {
@@ -54,14 +78,7 @@ const UI = (() => {
         body: `<p class="modal-note">${esc(message)}</p>`,
         onSubmit: () => { resolve(true); return true; }
       });
-      const d = dialog();
       modalState.resolver = resolve;
-      const onClose = () => {
-        d.removeEventListener('close', onClose);
-        if (modalState && modalState.resolver) modalState.resolver(false);
-        if (modalState) modalState.resolver = null;
-      };
-      d.addEventListener('close', onClose);
     });
   }
 
@@ -72,26 +89,29 @@ const UI = (() => {
       suggestions = []
     } = opts;
     const id = 'f-' + name;
+    const describedBy = help ? ` aria-describedby="help-${id}"` : '';
     let control;
     if (type === 'select') {
-      control = `<select id="${id}" name="${esc(name)}" ${required ? 'required' : ''} ${attrs}>` +
+      control = `<select id="${id}" name="${esc(name)}" ${required ? 'required' : ''} ${describedBy} ${attrs}>` +
         options.map((o) => {
           const val = typeof o === 'object' ? o.value : o;
           const text = typeof o === 'object' ? o.label : o;
           return `<option value="${esc(val)}" ${String(val) === String(value) ? 'selected' : ''}>${esc(text)}</option>`;
         }).join('') + '</select>';
     } else if (type === 'textarea') {
-      control = `<textarea id="${id}" name="${esc(name)}" rows="${rows}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''} ${attrs}>${esc(value)}</textarea>`;
+      control = `<textarea id="${id}" name="${esc(name)}" rows="${rows}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''} ${describedBy} ${attrs}>${esc(value)}</textarea>`;
     } else if (type === 'checkbox') {
-      control = `<label class="switch"><input type="checkbox" id="${id}" name="${esc(name)}" ${checked ? 'checked' : ''} ${attrs}><span class="switch-track"></span></label>`;
-      return `<div class="field field-check ${full ? 'field-full' : ''}"><div class="field-check-main"><label for="${id}">${esc(label)}</label>${help ? `<small>${esc(help)}</small>` : ''}</div>${control}</div>`;
+      control = `<label class="switch"><input type="checkbox" id="${id}" name="${esc(name)}" ${checked ? 'checked' : ''} ${describedBy} ${attrs}><span class="switch-track"></span></label>`;
+      return `<div class="field field-check ${full ? 'field-full' : ''}"><div class="field-check-main"><label for="${id}">${esc(label)}</label>${help ? `<small id="help-${id}">${esc(help)}</small>` : ''}</div>${control}</div>`;
     } else {
-      control = `<input id="${id}" name="${esc(name)}" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''} ${min !== undefined ? `min="${min}"` : ''} ${max !== undefined ? `max="${max}"` : ''} ${step !== undefined ? `step="${step}"` : ''} ${suggestions.length ? `list="dl-${esc(name)}"` : ''} ${attrs}>`;
+      const inputMode = type === 'number' ? ' inputmode="decimal"' : '';
+      control = `<input id="${id}" name="${esc(name)}" type="${type}" value="${esc(value)}" placeholder="${esc(placeholder)}" ${required ? 'required' : ''} ${inputMode} ${describedBy} ${min !== undefined ? `min="${min}"` : ''} ${max !== undefined ? `max="${max}"` : ''} ${step !== undefined ? `step="${step}"` : ''} ${suggestions.length ? `list="dl-${esc(name)}"` : ''} ${attrs}>`;
     }
     const list = suggestions.length
       ? `<datalist id="dl-${esc(name)}">${suggestions.map((s) => `<option value="${esc(s)}"></option>`).join('')}</datalist>`
       : '';
-    return `<div class="field ${full ? 'field-full' : ''}"><label for="${id}">${esc(label)}${required ? ' <span class="req">*</span>' : ''}</label>${control}${list}${help ? `<small>${esc(help)}</small>` : ''}</div>`;
+    const helpHtml = help ? `<small id="help-${id}">${esc(help)}</small>` : '';
+    return `<div class="field ${full ? 'field-full' : ''}"><label for="${id}">${esc(label)}${required ? ' <span class="req">*</span>' : ''}</label>${control}${list}${helpHtml}</div>`;
   }
 
   function formGrid(fields) {
@@ -116,7 +136,7 @@ const UI = (() => {
   }
 
   function ring(pct, label, sub = '') {
-    const p = Utils.clamp(Number(pct) || 0, 0, 100);
+    const p = Utils.clamp(Number(pct) || 0, 0, 100); // F-12: tidak pernah > 100%.
     const r = 42, c = 2 * Math.PI * r;
     return `<div class="ring" role="img" aria-label="${p}% ${esc(label)}">
       <svg viewBox="0 0 100 100" aria-hidden="true">
@@ -128,7 +148,8 @@ const UI = (() => {
   }
 
   function bar(pct, tone = 'primary', label = 'Progres') {
-    return `<div class="bar" role="progressbar" aria-label="${esc(label)}" aria-valuenow="${Utils.clamp(pct, 0, 100)}" aria-valuemin="0" aria-valuemax="100"><span class="bar-fill bar-${tone}" style="width:${Utils.clamp(pct, 0, 100)}%"></span></div>`;
+    const p = Utils.clamp(pct, 0, 100);
+    return `<div class="bar" role="progressbar" aria-label="${esc(label)}" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100"><span class="bar-fill bar-${tone}" style="width:${p}%"></span></div>`;
   }
 
   function section(title, subtitle = '', action = '') {
@@ -140,7 +161,8 @@ const UI = (() => {
   }
 
   function pageHead(eyebrow, title, desc, actions = '') {
-    return `<div class="page-head"><div><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2>${desc ? `<p>${esc(desc)}</p>` : ''}</div>${actions ? `<div class="page-actions">${actions}</div>` : ''}</div>`;
+    // U-04: judul halaman sudah ada di h1 topbar; h2 disembunyikan dari pembaca layar.
+    return `<div class="page-head"><div><span class="eyebrow">${esc(eyebrow)}</span><h2 aria-hidden="true">${esc(title)}</h2>${desc ? `<p>${esc(desc)}</p>` : ''}</div>${actions ? `<div class="page-actions">${actions}</div>` : ''}</div>`;
   }
 
   function initModal() {
@@ -153,28 +175,35 @@ const UI = (() => {
       if (submit.disabled) return;
       if (!modalState || !modalState.onSubmit) return closeModal();
       const form = document.getElementById('modal-form');
+      // F-13: validasi native tetap dijalankan walaupun form memakai novalidate.
+      if (form && !form.reportValidity()) return;
       const result = modalState.onSubmit(form, new FormData(form));
       if (result === false) return;
-      // ANIMATED ICON 05 — satu tombol, feedback "terbang lalu kembali".
+      // U-05: tutup segera; animasi tautan tetap ringan (220 ms) tanpa menahan UI.
       submit.disabled = true;
       submit.classList.add('is-sending');
+      closeModal();
       setTimeout(() => {
-        closeModal();
         submit.disabled = false;
         submit.classList.remove('is-sending');
-      }, 720);
+      }, 220);
     });
     document.getElementById('modal-form').addEventListener('submit', (e) => {
       e.preventDefault();
       document.getElementById('modal-submit').click();
     });
+    d.addEventListener('input', (e) => {
+      if (modalState && e.target.closest('#modal-form')) modalState.dirty = true;
+    });
     d.addEventListener('click', (e) => {
-      if (e.target === d) closeModal();
+      if (e.target !== d) return;
+      if (modalState && modalState.dirty) {
+        toast('Perubahan belum disimpan. Pilih Simpan atau Batal.', 'info');
+        return;
+      }
+      closeModal();
     });
-    d.addEventListener('close', () => {
-      document.body.classList.remove('has-modal');
-      if (modalState && modalState.onSubmit) modalState = null;
-    });
+    d.addEventListener('close', releaseModal);
   }
 
   /* ---------- Ikon yang ber-morph, bukan di-swap ---------- */
@@ -248,12 +277,13 @@ const UI = (() => {
     if (!icon) { run(); return; }
     btn.disabled = true;
     icon.classList.add('is-loading');
+    // P-01/U-05: umpan balik singkat, tidak menahan unduhan.
     setTimeout(() => {
       run();
       icon.classList.remove('is-loading');
       icon.classList.add('is-done');
-      setTimeout(() => { icon.classList.remove('is-done'); btn.disabled = false; }, 900);
-    }, 650);
+      setTimeout(() => { icon.classList.remove('is-done'); btn.disabled = false; }, 500);
+    }, 220);
   }
 
   return {
