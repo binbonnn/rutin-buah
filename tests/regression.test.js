@@ -172,7 +172,7 @@ test('Migrasi v2: string completion lama dibaca sebagai status v3', () => {
     shopping: [], tasks: []
   };
   const migrated = createEnv(legacy).Store.state;
-  assert.equal(migrated.version, 4);
+  assert.equal(migrated.version, 5);
   assert.equal(migrated.activities.length, 1);
   assert.equal(migrated.weeklyReviews && typeof migrated.weeklyReviews, 'object');
   assert.equal(migrated.completion['2026-11-23'][a.id].s, 'completed');
@@ -311,7 +311,7 @@ test('D.2: ICS memuat dua pengingat mingguan evaluasi', () => {
 
 /* ---------------- v1.2.2: audit V3 ---------------- */
 
-test('Schema 4: cadangan pra-migrasi ditulis sebelum data diubah', () => {
+test('Schema 5: cadangan pra-migrasi ditulis sebelum data diubah', () => {
   const probe = createEnv();
   const base = probe.Store.normalizeState({});
   const legacy = { ...base, version: 3 };
@@ -319,11 +319,11 @@ test('Schema 4: cadangan pra-migrasi ditulis sebelum data diubah', () => {
   assert.equal(env.storage.get('rutin-buah:v1:pre-migrate-v3'), JSON.stringify(legacy));
   // Migrasi terjadi di memori dulu; data lama belum ditimpa sampai persist().
   assert.equal(env.saved().version, 3);
-  assert.equal(env.Store.state.version, 4);
+  assert.equal(env.Store.state.version, 5);
   assert.ok(env.Store.state.firstUseAt, 'firstUseAt harus terisi setelah migrasi');
 });
 
-test('Schema 4: slot pra-migrasi lama dibersihkan saat migrasi berikutnya', () => {
+test('Schema 5: slot pra-migrasi lama dibersihkan saat migrasi berikutnya', () => {
   const probe = createEnv();
   const base = probe.Store.normalizeState({});
   const legacy = { ...base, version: 3 };
@@ -496,23 +496,42 @@ test('V3-08: laporan catch-up memakai jadwal yang dibekukan saat hari berlalu', 
     s.completion = {};
   }, true);
   env.Store.ensureReviews(new Date(env.Utils.atMinutes('2026-11-17', 10 * 60)));
-  assert.ok(env.Store.state.dayPlans['2026-11-16'], 'jadwal 16 Nov harus dibekukan');
+  assert.ok(env.Store.state.daySnapshots['2026-11-16'], 'jadwal 16 Nov harus dibekukan');
+  assert.equal(env.Store.state.daySnapshots['2026-11-16'].a[0][4], 'Jadwal lama');
   env.Store.update((s) => { s.activities = []; }, true);
   const reportNow = new Date(env.Utils.atMinutes('2026-11-24', 9 * 60 + 5));
   env.Store.ensureReviews(reportNow);
   const r = env.Store.reviewFor('2026-11-16', reportNow);
   assert.equal(r.status, 'final');
-  assert.ok(r.items.some((i) => i.id === 'old' && i.title === 'Jadwal lama'));
+  assert.ok(env.Store.reviewItems(r).some((i) => i.id === 'old' && i.title === 'Jadwal lama'));
 });
 
-test('V3-03: teks rencana jujur sampai penjadwalan otomatis S1 hadir', () => {
+test('S1/V3-03: rencana dijadwalkan, diterima jadi satu aktivitas, dan bisa dibatalkan', () => {
   const env = singleActivityEnv();
   env.Store.update((s) => { s.firstUseAt = env.date(2026, 10, 1, 8, 0, 0).toISOString(); }, true);
   const now = env.date(2026, 10, 26, 9, 30, 0);
   env.Store.ensureReviews(now);
   const r = env.Store.reviewList(now)[0];
   assert.ok(r.plan.length);
-  assert.match(r.plan[0].action, /belum terjadwal otomatis/);
+  assert.ok(r.plan[0].suggested, 'rencana harus punya slot usulan');
+  assert.equal(r.plan[0].status, 'proposed');
+  assert.equal(r.plan[0].createdActivityId, null);
+
+  const before = env.Store.state.activities.length;
+  const accepted = env.Store.acceptPlan(r.weekKey, r.plan[0].id);
+  assert.equal(accepted.ok, true, accepted.reason);
+  assert.equal(env.Store.state.activities.length, before + 1);
+  const created = env.Store.state.activities.find((a) => a.id === accepted.activityId);
+  assert.equal(created.origin, 'recovery');
+  assert.equal(created.recoveryOf, r.plan[0].activityId);
+  assert.equal(created.isRecurring, false);
+  assert.equal(created.date, r.plan[0].suggested.date);
+  assert.equal(created.startTime, r.plan[0].suggested.start);
+
+  const undone = env.Store.undoPlan(r.weekKey, r.plan[0].id);
+  assert.equal(undone.ok, true, undone.reason);
+  assert.equal(env.Store.state.activities.length, before);
+  assert.equal(env.Store.reviewFor(r.weekKey).plan[0].status, 'proposed');
   assert.doesNotMatch(env.Store.reviewMarkdown(r.weekKey), /akan dihapus pada hari/);
   assert.match(env.Store.reviewMarkdown(r.weekKey), /Salinan ini milik Anda\. Laporan di app dihapus setelah/);
 });

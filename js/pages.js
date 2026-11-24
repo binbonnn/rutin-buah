@@ -529,6 +529,55 @@ const Pages = (() => {
     }).join('')}</div>`;
   }
 
+  /** S2: teks dan CTA berasal dari data insight, bukan teks yang disimpan. */
+  function insightText(i) {
+    return Store.insightText(i);
+  }
+
+  function insightCta(i) {
+    const d = (i && i.data) || {};
+    if (i.cta === 'open-plan') return `<button class="btn btn-soft btn-sm" type="button" data-action="eval-goto-plan">Atur rencana</button>`;
+    if (i.cta === 'open-day' && /^\d{4}-\d{2}-\d{2}$/.test(String(d.date || ''))) {
+      return `<a class="btn btn-soft btn-sm" href="#/jadwal?date=${encodeURIComponent(d.date)}">Lihat hari</a>`;
+    }
+    if (i.cta === 'edit-activity' && d.id) {
+      return `<button class="btn btn-soft btn-sm" type="button" data-action="insight-edit" data-id="${esc(d.id)}" data-title="${esc(d.title || '')}">Ubah jam</button>`;
+    }
+    if (i.cta === 'open-settings') return `<a class="btn btn-soft btn-sm" href="#/pengaturan">Buka pengaturan</a>`;
+    return '';
+  }
+
+  /** S1: satu baris rencana, lengkap dengan jam usulan dan tindakannya. */
+  function planRow(p, key, index) {
+    const accepted = p.status === 'accepted';
+    const skipped = p.status === 'skipped';
+    const when = p.suggested ? Store.planWhen(p.suggested) : Store.planReason(p);
+    const chronic = p.kind === 'chronic' && p.status === 'proposed'
+      ? `<div class="plan-chronic" role="group" aria-label="Pilihan aktivitas kronis">
+          <button class="btn btn-soft btn-sm" type="button" data-action="plan-chronic" data-choice="reschedule" data-week="${esc(key)}" data-id="${esc(p.id)}">Ubah jam permanen</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="plan-chronic" data-choice="delete" data-week="${esc(key)}" data-id="${esc(p.id)}">Hapus dari template</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="plan-chronic" data-choice="keep" data-week="${esc(key)}" data-id="${esc(p.id)}">Pertahankan</button>
+        </div>`
+      : '';
+    const actions = accepted
+      ? `<div class="plan-buttons">
+          <a class="btn btn-soft btn-sm" href="#/jadwal?date=${encodeURIComponent(p.suggested ? p.suggested.date : '')}">Lihat di Jadwal</a>
+          <button class="btn btn-ghost btn-sm" type="button" data-action="plan-undo" data-week="${esc(key)}" data-id="${esc(p.id)}">Undo</button>
+        </div>`
+      : skipped ? ''
+        : `<div class="plan-buttons">
+            <button class="btn btn-ghost btn-sm" type="button" data-action="plan-edit" data-week="${esc(key)}" data-id="${esc(p.id)}">Ubah jam</button>
+            <button class="btn btn-soft btn-sm" type="button" data-action="plan-accept" data-week="${esc(key)}" data-id="${esc(p.id)}">Terima</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-action="plan-skip" data-week="${esc(key)}" data-id="${esc(p.id)}">Lewati</button>
+          </div>`;
+    return `<li class="plan-decision ${accepted ? 'is-accepted' : skipped ? 'is-skipped' : ''}">
+      <span class="plan-index">${index + 1}</span>
+      <div class="plan-main"><strong>${esc(p.title)}</strong><small>${esc(when)}</small><small>${Utils.number(p.durationMin, 20)} menit · ${p.kind === 'chronic' ? 'Pola kronis' : 'Pemulihan'}</small>${chronic}</div>
+      ${accepted ? UI.chip('Diterima', 'ok') : skipped ? UI.chip('Dilewati', 'neutral') : ''}
+      ${actions}
+    </li>`;
+  }
+
   function evaluasi() {
     const now = new Date();
     const list = Store.reviewList(now);
@@ -556,18 +605,13 @@ const Pages = (() => {
       <div class="subtabs" role="tablist" aria-label="Bagian evaluasi">${tabs}</div>`;
 
     if (evalTab === 'rencana') {
-      const rows = r.plan.length ? r.plan.map((p, i) => `<li class="plan-decision ${p.accepted ? 'is-accepted' : p.skipped ? 'is-skipped' : ''}">
-        <span class="plan-index">${i + 1}</span>
-        <div class="plan-main"><strong>${esc(p.title)}</strong><small>${esc(Utils.dayName(Utils.dow(Utils.fromKey(p.date)), true))} · ${esc(p.time || '-')} — ${esc(p.action)}</small></div>
-        ${p.accepted || p.skipped
-          ? UI.chip(p.accepted ? 'Diterima' : 'Dilewati', p.accepted ? 'ok' : 'neutral')
-          : `<div class="plan-buttons">
-              <button class="btn btn-soft btn-sm" type="button" data-action="plan-accept" data-week="${esc(key)}" data-id="${esc(p.id)}">Terima</button>
-              <button class="btn btn-ghost btn-sm" type="button" data-action="plan-skip" data-week="${esc(key)}" data-id="${esc(p.id)}">Lewati</button>
-            </div>`}
-      </li>`).join('') : UI.empty('target', 'Tidak ada rencana', 'Semua aktivitas minggu ini sudah tertangani.');
+      const rows = r.plan.length ? r.plan.map((p, i) => planRow(p, key, i)).join('')
+        : UI.empty('target', 'Tidak ada rencana', 'Semua aktivitas minggu ini sudah tertangani.');
+      const totalMin = r.plan.filter((p) => p.status === 'accepted')
+        .reduce((sum, p) => sum + Utils.number(p.durationMin, 20), 0);
       return `<div class="stack">${head}
         <section class="card">${UI.section('Rencana pemulihan', 'Maksimal 5 tindakan dari aktivitas yang belum selesai')}
+          <p class="hint plan-total">Total tambahan: ${totalMin} menit</p>
           <ul class="plan-decisions">${rows}</ul>
         </section>
       </div>`;
@@ -589,9 +633,9 @@ const Pages = (() => {
     }
 
     const insights = r.insights.length
-      ? `<ol class="insight-list">${r.insights.map((i) => `<li><strong>${esc(i.title)}</strong><span>${esc(i.detail)}</span></li>`).join('')}</ol>`
-      : UI.empty('chart', 'Belum ada insight', 'Insight muncul setelah ada aktivitas yang tercatat.');
-    const unfinished = reviewDayGroups(r.items, r.daily);
+      ? `<ol class="insight-list">${r.insights.map((i) => `<li><span>${esc(insightText(i))}</span>${insightCta(i)}</li>`).join('')}</ol>`
+      : UI.empty('chart', 'Data belum cukup', 'Data belum cukup untuk saran minggu ini.');
+    const unfinished = reviewDayGroups(Store.reviewItems(r), r.daily);
     const waiting = r.waitingCount
       ? `<p class="hint">${r.waitingCount} aktivitas masih menunggu jamnya dan belum dihitung dalam pratinjau ini.</p>`
       : '';
@@ -615,8 +659,8 @@ const Pages = (() => {
       <section class="card">${UI.section('Insight', 'Maksimal tiga catatan penting')}${insights}</section>
       <section class="card">${UI.section('Yang belum selesai', 'Dikelompokkan per hari')}${unfinished}${waiting}${skipped}</section>
       <section class="card">
-        ${UI.section('Rencana pemulihan', `${r.plan.filter((p) => p.accepted).length} dari ${r.plan.length} diterima`, `<button class="btn btn-soft btn-sm" type="button" data-action="eval-goto-plan">Atur rencana</button>`)}
-        <p class="hint">${r.plan.map((p) => `${p.accepted ? '✓' : p.skipped ? '–' : '·'} ${p.title}`).join(' · ') || 'Tidak ada rencana.'}</p>
+        ${UI.section('Rencana pemulihan', `${r.plan.filter((p) => p.status === 'accepted').length} dari ${r.plan.length} diterima`, `<button class="btn btn-soft btn-sm" type="button" data-action="eval-goto-plan">Atur rencana</button>`)}
+        <p class="hint">${r.plan.map((p) => `${p.status === 'accepted' ? '✓' : p.status === 'skipped' ? '–' : '·'} ${p.title}${p.suggested ? ` (${Store.planWhen(p.suggested)})` : ''}`).join(' · ') || 'Tidak ada rencana.'}</p>
       </section>
     </div>`;
   }
@@ -1327,12 +1371,61 @@ const Pages = (() => {
     'eval-open'(el) { evalWeek = el.dataset.week; evalTab = 'ringkasan'; document.dispatchEvent(new CustomEvent('app:force-render')); },
     'eval-goto-plan'() { evalTab = 'rencana'; document.dispatchEvent(new CustomEvent('app:force-render')); },
     'plan-accept'(el) {
-      Store.setPlanDecision(el.dataset.week, [el.dataset.id], true);
-      UI.toast('Rencana diterima.');
+      const res = Store.acceptPlan(el.dataset.week, el.dataset.id);
+      if (!res.ok) { UI.toast(res.reason || 'Rencana tidak bisa diterima.', 'info'); return; }
+      UI.toast('Rencana diterima; satu aktivitas ditambahkan ke Jadwal.');
     },
     'plan-skip'(el) {
-      Store.setPlanDecision(el.dataset.week, [el.dataset.id], false);
-      UI.toast('Rencana dilewati.', 'info');
+      if (Store.skipPlan(el.dataset.week, el.dataset.id)) UI.toast('Rencana dilewati.', 'info');
+    },
+    'plan-undo'(el) {
+      const res = Store.undoPlan(el.dataset.week, el.dataset.id);
+      UI.toast(res.ok ? 'Rencana dibatalkan.' : (res.reason || 'Rencana tidak bisa dibatalkan.'), res.ok ? 'success' : 'info');
+    },
+    'plan-edit'(el) {
+      const r = Store.reviewFor(el.dataset.week);
+      const p = r && r.plan.find((item) => item.id === el.dataset.id);
+      if (!p) return;
+      const sug = p.suggested || { date: Utils.dateKey(new Date()), start: '19.00', end: '19.40' };
+      UI.openModal({
+        title: 'Ubah jam rencana',
+        body: grid([
+          field('Tanggal', 'date', { type: 'date', value: sug.date, required: true, full: true }),
+          field('Mulai', 'startTime', { type: 'time', value: Utils.fmtTimeColon(sug.start), required: true }),
+          field('Selesai', 'endTime', { type: 'time', value: Utils.fmtTimeColon(sug.end), required: true })
+        ]),
+        onSubmit(form, data) {
+          const res = Store.editPlanSlot(el.dataset.week, el.dataset.id, {
+            date: String(data.get('date') || ''),
+            start: Utils.fmtTime(String(data.get('startTime') || '')),
+            end: Utils.fmtTime(String(data.get('endTime') || ''))
+          });
+          if (!res.ok) { UI.toast(res.reason || 'Jadwal tidak valid.', 'error'); return false; }
+          UI.toast(`Rencana diperbarui: ${Store.planWhen(res.suggested)}.`);
+        }
+      });
+    },
+    'plan-chronic'(el) {
+      const week = el.dataset.week;
+      const id = el.dataset.id;
+      const choice = el.dataset.choice;
+      if (choice === 'reschedule') {
+        const r = Store.reviewFor(week);
+        const p = r && r.plan.find((item) => item.id === id);
+        if (!p) return;
+        const found = S().activities.find((a) => a.templateId === p.activityId || a.id === p.activityId || a.title === p.title);
+        if (!found) { UI.toast('Aktivitas asli tidak ditemukan.', 'info'); return; }
+        openActivityModal(found);
+        return;
+      }
+      const res = Store.resolveChronic(week, id, choice);
+      UI.toast(res.ok ? (choice === 'delete' ? 'Aktivitas dihapus dari template.' : 'Pola kronis dipertahankan 28 hari.')
+        : (res.reason || 'Pilihan tidak bisa diproses.'), res.ok ? 'success' : 'info');
+    },
+    'insight-edit'(el) {
+      const found = S().activities.find((a) => a.id === el.dataset.id || a.title === el.dataset.title);
+      if (!found) { UI.toast('Aktivitas tidak ditemukan.', 'info'); return; }
+      openActivityModal(found);
     },
     'download-review'(el) {
       const key = el.dataset.week;
@@ -1575,9 +1668,9 @@ const Pages = (() => {
       updateNotifStatus();
       UI.toast(perm === 'granted' ? 'Notifikasi browser diaktifkan.' : 'Izin notifikasi belum diberikan. Pengingat tetap tampil di aplikasi.', perm === 'granted' ? 'success' : 'info');
     },
-    'export-data'() {
+    async 'export-data'() {
       Store.markBackup();
-      const json = Store.exportData();
+      const json = await Store.exportDataAsync();
       Utils.downloadFile('rutin-buah-cadangan.json', json, 'application/json');
       const note = document.getElementById('last-backup-note');
       if (note) note.textContent = 'Cadangan terakhir: hari ini.';
@@ -1814,7 +1907,7 @@ const Pages = (() => {
     dashboard, jadwal, evaluasi, skripsi, buah, belanja, pengaturan,
     Actions, openActivityModal, openConsumeModal, openStockModal, openShopModal, openTaskModal,
     saveSettings, updateNotifStatus, exportMarkdown, exportICS, refreshShoppingTotals,
-    setViewDate: (d) => { viewDate = new Date(d); },
+    insightText, setViewDate: (d) => { viewDate = new Date(d); },
     getViewDate: () => viewDate, filterActivities, afterRender, refreshLiveStates
   };
 })();

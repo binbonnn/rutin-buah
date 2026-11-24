@@ -5,7 +5,7 @@ const Utils = (() => {
   const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
   // Q-09: satu sumber versi aplikasi (dipakai UI, ekspor, dan dokumentasi).
-  const APP_VERSION = '1.2.3';
+  const APP_VERSION = '1.3.0';
 
   const pad = (n) => String(n).padStart(2, '0');
 

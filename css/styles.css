@@ -1306,6 +1306,12 @@ html.theme-switching .day-chip, html.theme-switching .activity-item, html.theme-
 .plan-buttons { display: flex; gap: 6px; }
 .plan-decision.is-accepted .plan-index { background: rgba(110,231,183,.35); }
 .plan-decision.is-skipped { opacity: .6; }
+/* v1.3.0: rencana yang benar-benar dijadwalkan dan CTA insight. */
+.plan-decision { flex-wrap: wrap; }
+.plan-buttons { flex-wrap: wrap; }
+.plan-chronic { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.plan-total { font-weight: 700; }
+.insight-list li .btn { align-self: flex-start; margin-top: 6px; }
 
 @media print {
   .sidebar, .topbar, .tabbar, .page-actions, .subtabs, .toast-root, .app-footer, .review-history-actions, .plan-buttons { display: none !important; }

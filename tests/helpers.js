@@ -4,7 +4,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const ROOT = path.resolve(__dirname, '..');
-const FILES = ['utils.js', 'seed.js', 'store.js'].map((f) => path.join(ROOT, 'js', f));
+const FILES = ['utils.js', 'seed.js', 'archive.js', 'planner.js', 'insights.js', 'store.js']
+  .map((f) => path.join(ROOT, 'js', f));
 
 function createEnv(initialState) {
   const storage = new Map();
@@ -40,6 +41,9 @@ function createEnv(initialState) {
     Utils: vm.runInContext('Utils', context),
     Seed: vm.runInContext('Seed', context),
     Store: vm.runInContext('Store', context),
+    Archive: vm.runInContext('Archive', context),
+    Planner: vm.runInContext('Planner', context),
+    Insights: vm.runInContext('Insights', context),
     // Fungsi biasa (bukan arrow) agar bisa dipakai dengan atau tanpa `new`.
     date: function dateFactory(...args) { return new DateCtor(...args); },
     saved: () => JSON.parse(storage.get('rutin-buah:v1') || '{}')

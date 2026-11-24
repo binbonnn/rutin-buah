@@ -20,7 +20,8 @@ test('pratinjau 21.00, final 09.00, jadwal bekukan, usulan, grup, dan unduh .md'
     s.firstUseAt = '2026-11-16T00:00:00.000Z';
     s.settings.strictSince = '2026-11-16';
     s.weeklyReviews = {};
-    s.dayPlans = {};
+    s.daySnapshots = {};
+    s.scheduleVersion = 1;
     s.activities = [
       {
         id: 'harian', title: 'Aktivitas harian', dayOfWeek: 1, category: 'Pribadi',
@@ -52,7 +53,7 @@ test('pratinjau 21.00, final 09.00, jadwal bekukan, usulan, grup, dan unduh .md'
   // V3-07: aktivitas yang jamnya belum tiba tidak masuk perhitungan.
   const waiting = await page.evaluate((key) => {
     const r = Store.state.weeklyReviews[key];
-    return { waiting: r.waiting.map((i) => i.title), items: r.items.map((i) => i.title) };
+    return { waiting: r.waiting.map((i) => i.title), items: Store.reviewItems(r).map((i) => i.title) };
   }, WEEK);
   expect(waiting.waiting).toContain('Aktivitas malam');
   expect(waiting.items).not.toContain('Aktivitas malam');
@@ -62,7 +63,10 @@ test('pratinjau 21.00, final 09.00, jadwal bekukan, usulan, grup, dan unduh .md'
     s.activities[0].title = 'Aktivitas hasil edit';
     s.activities[0].startTime = '08.00';
   }, true));
-  const frozen = await page.evaluate(() => Store.state.dayPlans['2026-11-16'][0].title);
+  const frozen = await page.evaluate(() => {
+    const snap = Store.state.daySnapshots['2026-11-16'];
+    return snap && snap.a[0][4];
+  });
   expect(frozen).toBe('Aktivitas harian');
 
   await setNow(page, jakarta(2026, 11, 23, 8, 59));
@@ -73,9 +77,19 @@ test('pratinjau 21.00, final 09.00, jadwal bekukan, usulan, grup, dan unduh .md'
   await page.evaluate(() => Store.ensureReviews());
   expect((await reviews(page)).statuses[WEEK]).toBe('final');
 
-  // V3-03: teks usulan jujur, bukan janji penjadwalan otomatis.
-  const action = await page.evaluate((key) => Store.state.weeklyReviews[key].plan[0].action, WEEK);
-  expect(action).toContain('Usulan (belum terjadwal otomatis)');
+  // S1/V3-03: rencana benar-benar punya slot usulan; skema laporan 5 dan kompak.
+  const plan = await page.evaluate((key) => {
+    const r = Store.state.weeklyReviews[key];
+    return { version: Store.state.version, ruleVersion: r.ruleVersion, first: r.plan[0],
+      items: r.items, when: Store.planWhen(r.plan[0].suggested) };
+  }, WEEK);
+  expect(plan.version).toBe(5);
+  expect(plan.ruleVersion).toBe(5);
+  expect(plan.items.every((i) => Object.keys(i).sort().join(',') === 'd,id,s')).toBe(true);
+  expect(plan.first.suggested).toBeTruthy();
+  expect(plan.first.status).toBe('proposed');
+  expect(plan.first.createdActivityId).toBe(null);
+  expect(plan.when).toMatch(/^\w+ \d+ \w+, \d{2}\.\d{2}–\d{2}\.\d{2}$/);
 
   await goRoute(page, 'evaluasi');
   // V3-10: daftar dikelompokkan per hari dan grup terburuk dibuka.
@@ -87,7 +101,8 @@ test('pratinjau 21.00, final 09.00, jadwal bekukan, usulan, grup, dan unduh .md'
   expect(groups.open).toBe(1);
 
   await page.locator('[data-action="eval-tab"][data-tab="rencana"]').click();
-  await expect(page.locator('.plan-decisions')).toContainText('Usulan (belum terjadwal otomatis)');
+  await expect(page.locator('.plan-decisions')).toContainText(plan.when);
+  await expect(page.locator('.plan-total')).toContainText('Total tambahan:');
 
   const downloadPromise = page.waitForEvent('download');
   await page.locator('[data-action="download-review"]').first().click();

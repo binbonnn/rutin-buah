@@ -11,7 +11,9 @@ const browser = {
   matchMedia: 'readonly', FormData: 'readonly', getComputedStyle: 'readonly', ErrorEvent: 'readonly',
   fetch: 'readonly', AbortController: 'readonly', structuredClone: 'readonly',
   Utils: 'readonly', Seed: 'readonly', Store: 'readonly', UI: 'readonly', Pages: 'readonly',
-  ErrLog: 'readonly', initTheme: 'readonly', __mentorT: 'writable'
+  ErrLog: 'readonly', Archive: 'readonly', Planner: 'readonly', Insights: 'readonly',
+  indexedDB: 'readonly', requestIdleCallback: 'readonly', cancelIdleCallback: 'readonly',
+  initTheme: 'readonly', __mentorT: 'writable'
 };
 
 const worker = {
@@ -27,7 +29,7 @@ const node = {
 };
 
 // Modul IIFE global dipakai lintas berkas lewat <script>; ESLint tidak melihat pemakaiannya.
-const MODULE_GLOBALS = '^(Utils|Seed|Store|UI|Pages|ErrLog)$';
+const MODULE_GLOBALS = '^(Utils|Seed|Store|UI|Pages|ErrLog|Archive|Planner|Insights)$';
 const rules = {
   'no-undef': 'error',
   'no-unused-vars': ['error', { args: 'none', varsIgnorePattern: MODULE_GLOBALS }],

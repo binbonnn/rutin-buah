@@ -142,6 +142,8 @@
     const { key, query } = parseRoute();
     const changed = key !== current;
     current = key;
+    const dateParam = query.get('date');
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) Pages.setViewDate(Utils.fromKey(dateParam));
     render(true);
     window.scrollTo({ top: 0, behavior: 'auto' }); // F-19: hapus deteksi fitur yang salah
 
@@ -288,7 +290,7 @@
         'Ya, impor data'
       );
       if (!ok) return;
-      Store.importData(text);
+      await Store.importDataAsync(text);
       applyTheme();
       render(true);
       UI.toast('Data berhasil diimpor. Cadangan lama tersedia di Pengaturan.');
@@ -642,6 +644,13 @@
     } catch { /* abbaikan */ }
   }
 
+  /** S9: arsip riwayat lama hanya saat idle; gagal/IndexedDB absen = data tetap di localStorage. */
+  function scheduleArchive() {
+    const run = () => { Store.archiveOld().catch(() => {}); };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 5000 });
+    else setTimeout(run, 1500);
+  }
+
   function init() {
     UI.initModal();
     renderNav();
@@ -651,6 +660,7 @@
     bindEvents();
     registerSW();
     Pages.setViewDate(new Date());
+    Store.freezeDays();
     syncReviews();
     route(true);
     Pages.updateNotifStatus();
@@ -663,6 +673,7 @@
       else Pages.refreshLiveStates();
     }, 60000);
     requestPersistentStorage();
+    scheduleArchive();
     setTimeout(initOnboarding, 300);
     setTimeout(checkBackupReminder, 1500);
   }

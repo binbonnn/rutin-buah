@@ -2,6 +2,21 @@
 
 Semua perubahan Signifikan dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/); proyek ini belum memakai Semantic Versioning secara ketat.
 
+## [1.3.0] — 2026-11-24
+
+**S9 + S1 + S2 — penyimpanan skalabel, rencana pemulihan yang dijadwalkan, insight berbasis pola**
+
+- **S9 (dikerjakan pertama):** skema 5. `daySnapshots` menggantikan `dayPlans` dengan format kompak `{v, a:[[id,start,end,cat,title]]}` yang dibekukan oleh `Store.freezeDays()` saat `init()` dan `ensureReviews()`; laporan tetap memakai jadwal hari itu walau jadwal diubah kemudian (V3-08).
+- Item laporan dipadatkan jadi `{d,id,s}` dengan `titles: {id:[title,start,cat]}`; `Store.reviewItems(review)` mengembalikan bentuk lama untuk UI dan Markdown. Satu laporan < 6 KB; simulasi 52 minggu < 350 KB.
+- Arsip riwayat lama ke IndexedDB (`js/archive.js`, DB `rutin-buah-archive`, store `completion-old` > 90 hari dan `consumption-old` > 180 hari). Penulisan dilakukan lebih dulu; data dihapus dari state hanya setelah transaksi komit. Bila IndexedDB absen/ditolak, tidak ada data yang dipindahkan. `Store.exportDataAsync()` / `Store.importDataAsync()` menyertakan arsip dan diuji round-trip.
+- **S1:** `js/planner.js` (murni) mencari celah 7 hari ke depan dalam jendela `05.00`–`min(21.30, bedtime−30 menit)` dengan penyangga 5 menit, melewati hari istirahat, membatasi beban pemulihan 60 menit/hari, dan tidak memakai kategori `Ibadah` sebagai penukar. `buildReview` mengisi `suggested` untuk maksimal 5 item prioritas.
+- `Store.acceptPlan()` membuat tepat satu aktivitas `origin:'recovery'` di slot usulan (id unik, sekali jadi), memeriksa ulang tabrakan, dan menawarkan slot baru bila terpakai. `Store.undoPlan()`, `Store.editPlanSlot()`, `Store.skipPlan()`, dan `Store.resolveChronic()` melengkapi alur. Pola kronis ≥ 3 laporan final berturut-turut mendapat tiga pilihan: ubah jam permanen, hapus dari template, atau tunda 28 hari.
+- Tab Rencana menampilkan `Sel 25 Nov, 19.30–20.10`, tombol Ubah jam/Terima/Lewati/Undo, tautan “Lihat di Jadwal”, dan ringkasan “Total tambahan: N menit”.
+- **S2:** `js/insights.js` (murni) menghitung tujuh jenis insight (`celebrate`, `recurring-miss`, `block-weak`, `worst-day`, `category-weak`, `trend`, `last-minute`) dengan ambang dan prioritas sesuai kontrak, maksimal 3 hasil dan keberagaman kind. Insight disimpan sebagai `{kind,score,data,cta}`; teks dirender oleh `Store.insightText()` / `Pages.insightText()` tanpa frasa “gagal”, “malas”, atau “kurang disiplin”. Data kurang dari 20 aktivitas atau minggu pertama memakai kartu “Data belum cukup untuk saran minggu ini”.
+- Insight templat lama (`fokus/terbaik/ringkasan`) dihapus; teks lama tetap dibaca sebagai `kind:'legacy'` agar cadangan lama tidak hilang. CTA mengarah ke Rencana, hari tertentu, edit aktivitas, atau pengaturan.
+- `Utils.APP_VERSION` = `1.3.0`, `package.json` = `1.3.0`, `sw.js` `CACHE` = `rutin-buah-v36`; modul baru dimuat di `index.html` dan precache service worker.
+- Tes: 57 tes unit (24 baru untuk S9/S1/S2) dan 42 tes E2E (8 baru). `npm run test:all` hijau di lokal dan CI.
+
 ## [1.2.3] — 2026-11-24
 
 **S10 — uji E2E browser, jam palsu, dan log galat**
