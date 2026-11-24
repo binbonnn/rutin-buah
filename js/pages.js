@@ -19,8 +19,6 @@ const Pages = (() => {
    */
   function activityControl(a, key, compact = false) {
     const now = new Date();
-    const date = Utils.fromKey(key) || now;
-    const status = Store.activityStatus(a, date);
     const raw = Store.statusOf((S().completion[key] || {})[a.id]);
     const win = Store.windowFor(a, key, now, S());
     const finished = raw === 'completed' || raw === 'skipped' || raw === 'excused';
@@ -50,7 +48,6 @@ const Pages = (() => {
     const next = statuses.find((s) => s.status === 'upcoming' || s.status === 'ongoing');
     const servings = Store.servingsForDate(now);
     const target = Store.dailyTarget();
-    const inv = Store.activeInventory();
     const soon = Store.consumeSoonInventory();
     const totals = Store.shoppingTotals();
     const reminder = Store.nextShoppingReminder();
@@ -808,7 +805,6 @@ const Pages = (() => {
     const s = S();
     const budgetLocked = !!s.settings.budgetLocked;
     const items = Store.currentWeekShopping();
-    const dayShort = (n) => Utils.dayName(Number(n) || 7, true);
     const totals = Store.shoppingTotals(items);
     const sessions = [
       { key: 'main', title: 'Belanja utama', day: s.settings.shoppingDays.main, icon: 'cart', note: `Pembelian ${Utils.dayName(s.settings.shoppingDays.main)}` },
@@ -985,6 +981,15 @@ const Pages = (() => {
           <p class="hint" id="last-backup-note">${esc(backupText)}</p>
           <p class="hint">“Bersihkan laporan 0%” hanya menghapus laporan dari minggu sebelum aplikasi pertama dipakai; riwayat centang Anda tidak diubah.</p>
           <p class="hint">Data disimpan di browser perangkat ini. Berkas ekspor berisi catatan pribadi—simpan di lokasi privat dan jangan diunggah ke tempat publik.</p>
+        </section>
+
+        <section class="card" id="diagnostik">
+          ${UI.section('Diagnostik', 'Log galat lokal untuk pelaporan masalah')}
+          <div class="data-actions">
+            <button class="btn btn-soft btn-sm" type="button" data-action="download-errlog">${UI.downloadIcon()} Unduh log galat</button>
+            <button class="btn btn-soft btn-sm" type="button" data-action="clear-errlog">${ic('trash', 16)} Hapus log</button>
+          </div>
+          <p class="hint" id="errlog-count">${typeof ErrLog !== 'undefined' ? ErrLog.count() : 0} entri tersimpan di perangkat ini. Log otomatis membuang entri terlama setelah 50 entri dan tidak menyimpan judul aktivitas maupun catatan Anda.</p>
         </section>
 
         <section class="card danger-zone">
@@ -1584,6 +1589,15 @@ const Pages = (() => {
     'cleanup-fake-reviews'() {
       const n = Store.cleanupFakeReviews();
       UI.toast(n ? `${n} laporan 0% sebelum pemakaian dihapus.` : 'Tidak ada laporan 0% yang perlu dibersihkan.', n ? 'success' : 'info');
+    },
+    'download-errlog'() {
+      Utils.downloadFile('rutin-buah-log-galat.txt', ErrLog.exportText(), 'text/plain;charset=utf-8');
+      UI.toast('Log galat diunduh.');
+    },
+    'clear-errlog'() {
+      const n = ErrLog.clear();
+      document.dispatchEvent(new CustomEvent('app:force-render'));
+      UI.toast(n ? `${n} entri log dihapus.` : 'Log galat sudah kosong.', n ? 'success' : 'info');
     },
     async 'reset-data'() {
       const ok = await UI.confirm('Kembalikan data awal?', 'Seluruh aktivitas, catatan, stok, riwayat, dan laporan evaluasi akan diganti dengan data bawaan. Ekspor data terlebih dahulu jika ingin menyimpannya.', 'Ya, kembalikan');

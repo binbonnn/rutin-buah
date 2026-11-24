@@ -2,7 +2,7 @@
 
 Aplikasi web **mobile-first** dan **PWA** untuk mengelola rutinitas mingguan, progres skripsi, konsumsi buah, stok, dan anggaran belanja. Seluruh data tersimpan lokal di browser (`localStorage`) sehingga tetap ada setelah halaman ditutup.
 
-**Versi aplikasi:** 1.2.2 · **Skema data:** 4
+**Versi aplikasi:** 1.2.3 · **Skema data:** 4
 
 ## Menjalankan
 
@@ -18,11 +18,12 @@ Alternatif (tanpa header keamanan tambahan): `python -m http.server 8080` atau `
 ## Pengujian
 
 ```powershell
-npm test
-# atau langsung: node --test "tests/*.test.js"
+npm install
+npx playwright install chromium   # sekali saja
+npm run test:all                  # regresi + lint + E2E
 ```
 
-Tes regresi memakai `node:test` bawaan Node (≥ 21) dan harness `vm` di `tests/helpers.js`; tidak perlu `npm install`. CI menjalankan syntax check, validasi manifest, dan tes yang sama pada setiap push/PR ke `main`.
+Perintah terpisah: `npm test` (regresi `node:test`, harness `vm`, tanpa browser), `npm run lint` (ESLint), `npm run test:e2e` (Playwright: desktop 1280×900 dan mobile 390×844, jam palsu `Asia/Jakarta`). Tes regresi tidak memerlukan `npm install`; E2E memerlukannya. CI menjalankan syntax check, validasi manifest, ESLint, regresi, dan E2E pada setiap push/PR ke `main`, lalu mengunggah laporan Playwright bila gagal.
 
 > Membuka `index.html` langsung dengan `file://` tetap menampilkan aplikasi, tetapi service worker, install prompt, dan notifikasi tidak akan aktif.
 
@@ -42,7 +43,7 @@ Tes regresi memakai `node:test` bawaan Node (≥ 21) dan harness `vm` di `tests/
 | **Skripsi** | Topik & target seminar (boleh kosong), 7 tugas awal, prioritas/status, urutan, catatan bimbingan (autosave), riwayat penyelesaian |
 | **Buah & Stok** | Target 2 porsi/hari (dapat diubah), jadwal konsumsi, stok per jenis + panduan penyimpanan, status "segera dikonsumsi" dihitung otomatis dari tanggal beli & lokasi simpann, pencatatan konsumsi yang dapat mengurangi stok, riwayat |
 | **Belanja** | Anggaran Rp50.000 (dapat diubah & dikunci), estimasi vs aktual dengan format Rupiah, dua sesi belanja (Minggu & Rabu), checklist item, pengingat, riwayat tanpa pemotongan diam-diam |
-| **Pengaturan** | Target, waktu jadwal, anggaran, hari belanja, notifikasi, tema (sistem/terang/gelap), ekspor JSON/Markdown/ICS, impor dengan konfirmasi + cadangan, pulihkan cadangan, bersihkan laporan 0% sebelum pemakaian, reset |
+| **Pengaturan** | Target, waktu jadwal, anggaran, hari belanja, notifikasi, tema (sistem/terang/gelap), ekspor JSON/Markdown/ICS, impor dengan konfirmasi + cadangan, pulihkan cadangan, bersihkan laporan 0% sebelum pemakaian, diagnostik log galat, reset |
 
 Navigasi harian memakai **bottom tab bar** pada layar < 1024 px; Pengaturan tetap dapat diakses lewat menu/header. Drawer tertutup tidak bisa difokus oleh keyboard maupun pembaca layar.
 
@@ -50,7 +51,7 @@ Navigasi harian memakai **bottom tab bar** pada layar < 1024 px; Pengaturan teta
 
 - **Tanpa build step** — HTML, CSS, dan JavaScript vanilla. Tema diterapkan oleh `js/theme-init.js` sebelum *first paint* agar tidak ada kilatan.
 - **Tampilan** — glassmorphism "Liquid Glass Studio": slab putih bevel, bento pastel, pill coral. Lantai ukuran huruf 12 px, target sentuh 44 px, teks koral memakai `--ink-primary` di tema terang dan putih di koral gelap di tema gelap. `prefers-reduced-motion` dan `prefers-reduced-transparency` dihormati.
-- **Penyimpanan** — `rutin-buah:v1`, skema 4. State dinormalisasi & dimigrasi saat dibaca; raw sebelum migrasi disalin ke `rutin-buah:v1:pre-migrate-v<from>`, dan cadangan pra-impor disimpan di `rutin-buah:v1:pre-import`. Data awal langsung dipersist, penulisan digabung (debounce), dan perubahan antar-tab disinkronkan. `navigator.storage.persist()` diminta setelah aplikasi dimuat. Lihat [`docs/STATE_SCHEMA.md`](docs/STATE_SCHEMA.md).
+- **Penyimpanan** — `rutin-buah:v1`, skema 4. State dinormalisasi & dimigrasi saat dibaca; raw sebelum migrasi disalin ke `rutin-buah:v1:pre-migrate-v<from>`, dan cadangan pra-impor disimpan di `rutin-buah:v1:pre-import`. Data awal langsung dipersist, penulisan digabung (debounce), dan perubahan antar-tab disinkronkan. `navigator.storage.persist()` diminta setelah aplikasi dimuat. Log galat terpisah di `rutin-buah:errlog` (maksimal 50 entri, tanpa judul/catatan pribadi). Lihat [`docs/STATE_SCHEMA.md`](docs/STATE_SCHEMA.md).
 - **Status aktivitas** disimpan per tanggal (`completion[YYYY-MM-DD][activityId]`), sehingga menyelesaikan aktivitas Senin tidak otomatis menyelesaikan Selasa. ID template stabil sehingga riwayat tidak hilang saat template diterapkan ulang.
 - **Jendela Aktif** — penandaan hanya berlaku antara jam mulai dan `jam selesai + toleransi` (default 10 menit, diatur di Pengaturan). Aktivitas ≥ 20 menit memakai dua langkah `Mulai` → `Selesai`; durasi 0 tetap punya jendela 10 menit. Status “Segera tutup” muncul pada masa toleransi setelah jam selesai. Aturan langsung berlaku mulai Senin pekan berjalan (`settings.strictSince`); hanya tanggal sebelum itu yang tetap memakai cara lama. Hari istirahat maksimal 2 per minggu, tidak dihitung dalam skor, dan tidak menimpa penandaan yang sudah ada.
 - **Evaluasi Mingguan** — pratinjau dibuat Minggu 21.00 dan snapshot final Senin 09.00. Laporan tidak dibuat untuk minggu sebelum aplikasi dipakai, dan pratinjau tidak menghitung aktivitas yang belum tiba jamnya. Disimpan maksimal 4 minggu/8 laporan final; yang kedaluwarsa belum dibuka tetap tampil sekali, paling lambat 14 hari. Jadwal lama dibekukan per hari agar laporan catch-up tidak berubah saat jadwal diedit. Riwayat centang tidak ikut dihapus. Unduh Markdown (`.md`) tersedia per laporan atau sekaligus; format JSON importable tidak disediakan.

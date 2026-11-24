@@ -10,7 +10,7 @@
       theme = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     }
     document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
-  } catch (e) {
+  } catch {
     // localStorage bisa diblokir (mode privat); biarkan fallback light.
   }
 })();

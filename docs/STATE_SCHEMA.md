@@ -1,6 +1,6 @@
 # Skema State Lokal — `rutin-buah:v1`
 
-Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 4` (`APP_VERSION = 1.2.2`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
+Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 4` (`APP_VERSION = 1.2.3`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
 
 ## Bentuk umum
 
@@ -108,6 +108,16 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 - **`lastBackupAt`** diperbarui saat ekspor JSON (`Store.markBackup()`). Banner & toast muncul bila usia cadangan > 14 hari.
 - **`settings.timezone`** tetap dibaca untuk kompatibilitas dengan cadangan lama, tetapi tidak lagi ditulis oleh UI.
 
+## Log galat terpisah
+
+`js/errlog.js` menyimpan maksimal 50 entri di `rutin-buah:errlog`, di luar state utama:
+
+```js
+[{ t, msg, src, line, stack, route, ver, kind: 'error' | 'rejection' }]
+```
+
+`stack` dibatasi 500 karakter. Teks dalam tanda kutip, tanggal, dan query URL disensor agar judul aktivitas/catatan tidak ikut tersimpan. Semua akses `localStorage` dibungkus `try/catch`; kegagalan menulis tidak boleh mengganggu aplikasi. Pengaturan → Diagnostik menyediakan unduh dan hapus log.
+
 ## Migrasi & cadangan
 
 1. Sebelum state diubah, raw versi lama disalin ke `rutin-buah:v1:pre-migrate-v<from>` (`from` = nomor versi sumber). Hanya satu slot terbaru yang dipertahankan; slot lama dibersihkan pada migrasi berikutnya. Cadangan ini dibuat di `load()` dan `reloadFromStorage()`.
@@ -123,7 +133,7 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 
 ```json
 {
-  "appVersion": "1.2.2",
+  "appVersion": "1.2.3",
   "schemaVersion": 4,
   "exportedAt": "2026-11-24T04:30:00.000Z",
   "state": {

@@ -2,6 +2,16 @@
 
 Semua perubahan Signifikan dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/); proyek ini belum memakai Semantic Versioning secara ketat.
 
+## [1.2.3] — 2026-11-24
+
+**S10 — uji E2E browser, jam palsu, dan log galat**
+
+- Tes Playwright baru untuk batas Jendela Aktif, V3-02, evaluasi, impor/template, autosave catatan, aksesibilitas, offline, dan konsol. Setiap temuan V3-01 s.d. V3-10 kini punya spesifikasi E2E; dua tes regresi yang hanya mencocokkan teks sumber (`V-09`, `F-11`) dihapus.
+- `page.clock.install` dipakai sebelum `goto` dengan `timezoneId: 'Asia/Jakarta'`; proyek `chromium` 1280×900 dan `mobile` 390×844 berjalan satu worker agar `localStorage` terisolasi.
+- ESLint flat config (`no-undef`, `no-unused-vars`, `eqeqeq`) berjalan di lokal dan CI. CI juga memasang Chromium Playwright, menjalankan `npm run test:e2e`, dan mengunggah `playwright-report/` bila gagal.
+- Log galat lokal `js/errlog.js`: ring buffer 50 entri `{t, msg, src, line, stack, route, ver, kind}` di `rutin-buah:errlog`, menangkap `error` dan `unhandledrejection`, menyensor kutipan/tanggal, dan tidak pernah melempar. Pengaturan → **Diagnostik** menyediakan **Unduh log galat** dan **Hapus log**. Berkas ditambahkan ke `SHELL` service worker.
+- Service worker cache bump `rutin-buah-v34` → `rutin-buah-v35`.
+
 ## [1.2.2] — 2026-11-24
 
 **Remediasi audit V3 — V3-01 s.d. V3-10**

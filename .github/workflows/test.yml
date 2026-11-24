@@ -32,5 +32,25 @@ jobs:
             }
           "
 
+      - name: Pasang dependency pengujian
+        run: npm ci
+
+      - name: Jalankan ESLint
+        run: npm run lint
+
       - name: Jalankan tes regresi
         run: npm test
+
+      - name: Pasang browser Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Jalankan tes E2E
+        run: npm run test:e2e
+
+      - name: Unggah laporan E2E saat gagal
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

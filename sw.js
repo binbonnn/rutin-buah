@@ -1,5 +1,5 @@
 /* Service worker — app shell offline-first dengan pembaruan yang aman. */
-const CACHE = 'rutin-buah-v34';
+const CACHE = 'rutin-buah-v35';
 const NAV_TIMEOUT = 3000;
 const SHELL = [
   './index.html',
@@ -7,6 +7,7 @@ const SHELL = [
   './css/styles.css',
   './js/theme-init.js',
   './js/utils.js',
+  './js/errlog.js',
   './js/seed.js',
   './js/store.js',
   './js/ui.js',

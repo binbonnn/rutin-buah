@@ -359,7 +359,7 @@
       const handler = Pages.Actions[el.dataset.action];
       if (!handler) return;
       e.preventDefault();
-      if (['export-data', 'export-md', 'export-ics', 'download-review', 'download-all-reviews'].includes(el.dataset.action)) {
+      if (['export-data', 'export-md', 'export-ics', 'download-review', 'download-all-reviews', 'download-errlog'].includes(el.dataset.action)) {
         UI.animateDownload(el, () => {
           try { handler(el); } catch (err) { console.error(err); UI.toast('Aksi gagal: ' + err.message, 'error'); }
         });

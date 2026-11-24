@@ -182,6 +182,7 @@ ul { margin: 0; padding: 0; list-style: none; }
   position: fixed; left: -9999px; top: 8px; z-index: 300;
   background: var(--coral-grad); color: var(--on-coral);
   padding: 10px 14px; border-radius: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; min-height: 44px;
 }
 .skip-link:focus { left: 20px; }
 
@@ -370,7 +371,7 @@ body.sidebar-open { overflow: hidden; }
 .app-footer.save-error { color: var(--danger); }
 .link-btn {
   position: relative; display: inline-flex; align-items: center;
-  background: none; border: 0; padding: 6px 0; min-height: 44px; color: var(--primary-strong);
+  background: none; border: 0; padding: 6px 0; min-height: 44px; min-width: 44px; color: var(--primary-strong);
   font-size: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px;
 }
 .link-btn::after { content: ""; position: absolute; inset: -4px -6px; }
@@ -430,7 +431,7 @@ body.sidebar-open { overflow: hidden; }
 /* ---------- Tombol kristal & pill coral ---------- */
 .btn {
   border: 1px solid rgba(255,255,255,.82); border-radius: 999px;
-  min-height: 44px; padding: 9px 16px;
+  min-height: 44px; min-width: 44px; padding: 9px 16px;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
   font-weight: 700; font-size: .82rem; white-space: nowrap;
   background: var(--panel-fill); color: var(--ink-primary);
@@ -442,7 +443,7 @@ body.sidebar-open { overflow: hidden; }
 [data-theme="dark"] .btn:hover { background: rgba(255,255,255,.14); }
 .btn:active { transform: scale(.975); }
 .btn:focus-visible { outline: 2px solid var(--coral-end); outline-offset: 2px; }
-.btn-sm { min-height: 36px; padding: 6px 13px; font-size: .76rem; }
+.btn-sm { min-height: 44px; padding: 8px 13px; font-size: .76rem; }
 .btn-block { width: 100%; }
 .btn-primary {
   background: var(--coral-grad);
@@ -641,7 +642,7 @@ body.sidebar-open { overflow: hidden; }
 .tl-mark.mint { background: linear-gradient(145deg, #6ee7b7, #10b981); }
 .timeline-row strong { font-size: var(--fs-xs); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-primary); }
 .timeline-row small { font-size: var(--fs-xs); font-weight: 700; color: var(--ink-secondary); flex: none; }
-.timeline-foot { width: 100%; margin-top: 12px; min-height: 40px; display: flex; align-items: center; justify-content: space-between; }
+.timeline-foot { width: 100%; margin-top: 12px; min-height: 44px; display: flex; align-items: center; justify-content: space-between; }
 
 /* ---------- Beranda: ringkasan ---------- */
 .progress-row { display: flex; align-items: baseline; gap: 5px; margin-bottom: 9px; }
@@ -826,7 +827,7 @@ body.sidebar-open { overflow: hidden; }
 .stock-stats span { display: block; font-size: var(--fs-xs); color: var(--ink-secondary); }
 .stock-stats strong { font-size: var(--fs-xs); font-weight: 800; }
 .storage-details { margin-top: 9px; font-size: var(--fs-xs); }
-.storage-details summary { cursor: pointer; color: var(--primary-strong); font-weight: 700; }
+.storage-details summary { cursor: pointer; color: var(--primary-strong); font-weight: 700; min-height: 44px; display: flex; align-items: center; }
 .storage-details p { color: var(--ink-secondary); margin-top: 5px; }
 .stock-actions { display: flex; gap: 6px; align-items: center; margin-top: 10px; }
 .stock-actions .btn-soft { margin-right: auto; }

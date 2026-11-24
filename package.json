@@ -1,13 +1,21 @@
 {
   "name": "rutin-buah",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "private": true,
   "description": "PWA pencatat rutinitas harian, skripsi, dan buah — tanpa build step.",
   "scripts": {
     "start": "node scripts/serve.js",
-    "test": "node --test \"tests/*.test.js\""
+    "test": "node --test \"tests/*.test.js\"",
+    "lint": "eslint .",
+    "test:e2e": "playwright test",
+    "test:all": "npm test && npm run lint && npm run test:e2e"
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "axe-core": "^4.14.1",
+    "eslint": "^10.15.0"
   }
 }

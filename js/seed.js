@@ -1,6 +1,6 @@
 /* ---------- Data awal / template dari PRD ---------- */
 const Seed = (() => {
-  const { parseTime, fmtTime, dow, dateKey, addDays } = Utils;
+  const { parseTime, fmtTime, dateKey, addDays } = Utils;
 
   // F-06/Q-04: angka ajaib diturunkan dari blok, bukan ditanam di jadwal.
   const num = (value, fallback) => {

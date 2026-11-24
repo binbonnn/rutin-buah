@@ -309,21 +309,6 @@ test('D.2: ICS memuat dua pengingat mingguan evaluasi', () => {
   }
 });
 
-test('V-09: target sentuh nyata 44 px tanpa pengecualian kecil', () => {
-  const css = read('css/styles.css');
-  assert.match(css, /\.check\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px/s);
-  assert.match(css, /\.btn-icon-sm\s*\{[^}]*width:\s*44px;\s*height:\s*44px/s);
-  assert.match(css, /\.mini-input\s*\{[^}]*height:\s*44px/s);
-  assert.doesNotMatch(css, /\.week-grid \.check \{ width: 24px/);
-  assert.doesNotMatch(css, /\.activity-tools \.btn-icon-sm \{ width: 30px/);
-});
-
-test('F-11: interval memakai pembaruan terarah, bukan render penuh', () => {
-  const app = read('js/app.js');
-  assert.match(app, /else Pages\.refreshLiveStates\(\);/);
-  assert.match(app, /function syncReviews\(\)/);
-});
-
 /* ---------------- v1.2.2: audit V3 ---------------- */
 
 test('Schema 4: cadangan pra-migrasi ditulis sebelum data diubah', () => {

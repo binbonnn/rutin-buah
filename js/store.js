@@ -3,7 +3,7 @@ const Store = (() => {
   const KEY = 'rutin-buah:v1';
   const BACKUP_KEY = KEY + ':pre-import';
   const SCHEMA_VERSION = 4;
-  const { mergeDefaults, dateKey, weekKey, dow, parseTime, dayName, number } = Utils;
+  const { mergeDefaults, dateKey, weekKey, dow, parseTime, number } = Utils;
 
   const arr = (v, fb) => (Array.isArray(v) ? v : fb);
   const obj = (v, fb) => (v && typeof v === 'object' && !Array.isArray(v) ? v : fb);
