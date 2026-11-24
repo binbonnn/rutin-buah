@@ -15,6 +15,9 @@ function createEnv(initialState) {
     setTimeout,
     clearTimeout,
     localStorage: {
+      // length/key diperlukan kode produksi untuk membersihkan slot lama.
+      get length() { return storage.size; },
+      key: (i) => Array.from(storage.keys())[i] ?? null,
       getItem: (key) => (storage.has(key) ? storage.get(key) : null),
       setItem: (key, value) => { storage.set(key, String(value)); },
       removeItem: (key) => storage.delete(key)
@@ -58,4 +61,16 @@ function singleActivityEnv(opts = {}) {
   return createEnv(state);
 }
 
-module.exports = { createEnv, singleActivityEnv, ROOT };
+/** Uji fungsi yang memakai new Date() di dalam vm tanpa mengubah jam sistem. */
+function setClock(env, iso) {
+  const fixed = Date.parse(iso);
+  env.context.__fixedNow = fixed;
+  vm.runInContext(`
+    Date = class __FixedDate extends Date {
+      constructor(...args) { if (!args.length) super(__fixedNow); else super(...args); }
+      static now() { return __fixedNow; }
+    };
+  `, env.context);
+}
+
+module.exports = { createEnv, singleActivityEnv, setClock, ROOT };

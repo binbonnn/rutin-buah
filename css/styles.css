@@ -370,7 +370,7 @@ body.sidebar-open { overflow: hidden; }
 .app-footer.save-error { color: var(--danger); }
 .link-btn {
   position: relative; display: inline-flex; align-items: center;
-  background: none; border: 0; padding: 6px 0; color: var(--primary-strong);
+  background: none; border: 0; padding: 6px 0; min-height: 44px; color: var(--primary-strong);
   font-size: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px;
 }
 .link-btn::after { content: ""; position: absolute; inset: -4px -6px; }
@@ -500,7 +500,7 @@ body.sidebar-open { overflow: hidden; }
 .badge-run, .chip-run { background: rgba(167,139,250,.24); color: #5b21b6; }
 .badge-idle { background: rgba(255,255,255,.56); color: var(--ink-secondary); }
 .badge-miss, .chip-danger { background: rgba(235,114,92,.22); color: #9a3412; }
-.badge-skip, .chip-warn { background: rgba(251,191,36,.28); color: #92400e; }
+.badge-warn, .badge-skip, .chip-warn { background: rgba(251,191,36,.28); color: #92400e; }
 .chip-primary { background: rgba(167,139,250,.24); color: #5b21b6; }
 .chip-blue { background: rgba(125,211,252,.30); color: #075985; }
 .chip-purple { background: rgba(167,139,250,.24); color: #5b21b6; }
@@ -512,7 +512,8 @@ body.sidebar-open { overflow: hidden; }
 [data-theme="dark"] .badge-run, [data-theme="dark"] .chip-run,
 [data-theme="dark"] .chip-primary, [data-theme="dark"] .chip-purple { color: #ddd6fe; }
 [data-theme="dark"] .badge-miss, [data-theme="dark"] .chip-danger { color: #fed7aa; }
-[data-theme="dark"] .badge-skip, [data-theme="dark"] .chip-warn, [data-theme="dark"] .chip-amber { color: #fde68a; }
+[data-theme="dark"] .badge-warn, [data-theme="dark"] .badge-skip,
+[data-theme="dark"] .chip-warn, [data-theme="dark"] .chip-amber { color: #fde68a; }
 [data-theme="dark"] .chip-blue { color: #bae6fd; }
 
 /* ---------- Bars, progress, empty ---------- */
@@ -614,6 +615,7 @@ body.sidebar-open { overflow: hidden; }
 .bento-check {
   display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: 12px;
   background: rgba(255,255,255,.46); border: 1px solid rgba(255,255,255,.72); text-align: left; width: 100%;
+  min-height: 44px;
   font-size: var(--fs-xs); font-weight: 700; color: var(--ink-primary);
 }
 .bento-check:hover { background: rgba(255,255,255,.72); }
@@ -1261,6 +1263,7 @@ html.theme-switching .day-chip, html.theme-switching .activity-item, html.theme-
 .subtabs { display: flex; gap: 6px; overflow-x: auto; padding: 4px; border-radius: 16px; background: var(--inset-fill); border: 1px solid rgba(255,255,255,.7); }
 .subtab { min-height: 44px; display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-secondary); font-weight: 700; font-size: var(--fs-xs); white-space: nowrap; }
 .subtab.is-active { background: var(--surface-solid); color: var(--primary-strong); box-shadow: 0 3px 10px rgba(30,41,59,.08); }
+[data-theme="dark"] .subtab.is-active { color: var(--primary-bright); }
 .review-retention { margin-top: 0; }
 .review-teaser-body { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .review-score { font-size: 1.9rem; letter-spacing: -.05em; color: var(--primary-strong); }
@@ -1278,6 +1281,18 @@ html.theme-switching .day-chip, html.theme-switching .activity-item, html.theme-
 .insight-list span { font-size: var(--fs-xs); color: var(--ink-secondary); }
 .review-items li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.6); font-size: var(--fs-xs); }
 .review-items li span, .review-items li em { color: var(--ink-secondary); font-style: normal; }
+/* V3-10: daftar panjang dikelompokkan per hari; grup terburuk dibuka. */
+.review-day-groups { display: flex; flex-direction: column; gap: 8px; }
+.review-day { border: 1px solid var(--white-line-soft); border-radius: 14px; background: var(--inset-fill); padding: 6px 12px; }
+.review-day > summary, .review-more > summary {
+  min-height: 44px; display: flex; align-items: center; gap: 8px;
+  cursor: pointer; list-style: none; font-weight: 700; font-size: var(--fs-xs);
+}
+.review-day > summary::-webkit-details-marker, .review-more > summary::-webkit-details-marker { display: none; }
+.review-day > summary span { margin-left: auto; color: var(--ink-secondary); font-weight: 600; }
+.review-more { margin-top: 4px; }
+.review-more > summary { color: var(--primary-strong); }
+[data-theme="dark"] .review-more > summary { color: var(--primary-bright); }
 .review-history-item { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 12px; border-radius: 14px; background: var(--inset-fill); border: 1px solid rgba(255,255,255,.7); }
 .review-history-item.is-selected { border-color: rgba(235,114,92,.6); }
 .review-history-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }

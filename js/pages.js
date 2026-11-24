@@ -445,7 +445,7 @@ const Pages = (() => {
       const item = btn.closest('.activity-item, .task-row');
       if (!item) return;
       const status = Store.activityStatus(a, Utils.fromKey(key));
-      item.classList.remove('status-upcoming', 'status-ongoing', 'status-missed', 'status-completed', 'status-skipped', 'status-inprogress', 'status-excused');
+      item.classList.remove('status-upcoming', 'status-ongoing', 'status-grace', 'status-missed', 'status-completed', 'status-skipped', 'status-inprogress', 'status-excused');
       item.classList.add('status-' + status);
       const badge = item.querySelector('.badge');
       if (badge) badge.outerHTML = UI.badge(status);
@@ -481,11 +481,11 @@ const Pages = (() => {
   }
 
   /* ========================= EVALUASI MINGGUAN ======================== */
-  const EVAL_NOTES = 'Laporan evaluasi disimpan selama 4 minggu terakhir, lalu dihapus otomatis. Unduh laporan yang ingin Anda simpan.';
+  const EVAL_NOTES = 'Laporan final disimpan maksimal 4 minggu dan 8 laporan. Yang kedaluwarsa dihapus paling lambat 14 hari setelahnya. Unduh laporan yang ingin Anda simpan.';
 
   function reviewBadge(r) {
     const parts = [];
-    parts.push(r.expired ? 'Kedaluwarsa · dihapus setelah dibuka' : r.daysLeft <= 1 ? 'Dihapus Senin 09.00' : `Tersisa ${r.daysLeft} hari`);
+    parts.push(r.expired ? 'Akan dihapus' : r.daysLeft <= 1 ? 'Dihapus Senin 09.00' : `Tersisa ${r.daysLeft} hari`);
     parts.push(r.downloadedAt ? 'Sudah diunduh ✓' : 'Belum diunduh');
     return UI.chip(parts.join(' · '), r.expired ? 'danger' : r.daysLeft <= 1 ? 'warn' : r.downloadedAt ? 'ok' : 'neutral');
   }
@@ -500,6 +500,36 @@ const Pages = (() => {
     }).join('');
     const label = daily.map((d) => `${d.label} ${d.pct}%`).join(', ');
     return `<div class="eval-bars" role="img" aria-label="Progres harian: ${esc(label)}">${bars}</div>`;
+  }
+
+  function reviewItemRow(i) {
+    return `<li><span>${esc(Utils.dayName(Utils.dow(Utils.fromKey(i.date)), true))} · ${esc(i.time || '-')}</span><strong>${esc(i.title)}</strong><em>${esc(i.reason)}</em></li>`;
+  }
+
+  /** V3-10: grup per hari, hari terburuk dibuka, maksimal 10 baris awal. */
+  function reviewDayGroups(items, daily) {
+    if (!items.length) return '<p class="hint">Semua aktivitas minggu ini selesai.</p>';
+    const groups = new Map();
+    items.forEach((i) => {
+      if (!groups.has(i.date)) groups.set(i.date, []);
+      groups.get(i.date).push(i);
+    });
+    const pctOf = (key) => (daily.find((d) => d.key === key) || {}).pct ?? 100;
+    const worst = [...groups.keys()].sort((a, b) =>
+      pctOf(a) - pctOf(b) || groups.get(b).length - groups.get(a).length)[0];
+    return `<div class="review-day-groups">${[...groups.entries()].map(([date, rows]) => {
+      const when = Utils.fromKey(date);
+      const label = `${Utils.dayName(Utils.dow(when), true)}, ${Utils.formatDate(when, { short: true })}`;
+      const first = rows.slice(0, 10).map(reviewItemRow).join('');
+      const rest = rows.slice(10).map(reviewItemRow).join('');
+      const more = rest
+        ? `<details class="review-more"><summary class="link-btn">Tampilkan semua (${rows.length})</summary><ul class="review-items">${rest}</ul></details>`
+        : '';
+      return `<details class="review-day" ${date === worst ? 'open' : ''}>
+        <summary><strong>${esc(label)}</strong><span>${rows.length} belum tercatat</span></summary>
+        <ul class="review-items">${first}</ul>${more}
+      </details>`;
+    }).join('')}</div>`;
   }
 
   function evaluasi() {
@@ -564,9 +594,10 @@ const Pages = (() => {
     const insights = r.insights.length
       ? `<ol class="insight-list">${r.insights.map((i) => `<li><strong>${esc(i.title)}</strong><span>${esc(i.detail)}</span></li>`).join('')}</ol>`
       : UI.empty('chart', 'Belum ada insight', 'Insight muncul setelah ada aktivitas yang tercatat.');
-    const unfinished = r.items.length
-      ? `<ul class="review-items">${r.items.map((i) => `<li><span>${esc(Utils.dayName(Utils.dow(Utils.fromKey(i.date)), true))} · ${esc(i.time || '-')}</span><strong>${esc(i.title)}</strong><em>${esc(i.reason)}</em></li>`).join('')}</ul>`
-      : '<p class="hint">Semua aktivitas minggu ini selesai.</p>';
+    const unfinished = reviewDayGroups(r.items, r.daily);
+    const waiting = r.waitingCount
+      ? `<p class="hint">${r.waitingCount} aktivitas masih menunggu jamnya dan belum dihitung dalam pratinjau ini.</p>`
+      : '';
     const skipped = r.skippedItems.length
       ? `<p class="hint">Sengaja dilewati (tidak masuk perhitungan skor): ${r.skippedItems.map((i) => esc(i.title)).join(', ')}.</p>`
       : '';
@@ -585,7 +616,7 @@ const Pages = (() => {
         ${evalBars(r.daily)}
       </section>
       <section class="card">${UI.section('Insight', 'Maksimal tiga catatan penting')}${insights}</section>
-      <section class="card">${UI.section('Yang belum selesai', 'Bahan evaluasi minggu ini')}${unfinished}${skipped}</section>
+      <section class="card">${UI.section('Yang belum selesai', 'Dikelompokkan per hari')}${unfinished}${waiting}${skipped}</section>
       <section class="card">
         ${UI.section('Rencana pemulihan', `${r.plan.filter((p) => p.accepted).length} dari ${r.plan.length} diterima`, `<button class="btn btn-soft btn-sm" type="button" data-action="eval-goto-plan">Atur rencana</button>`)}
         <p class="hint">${r.plan.map((p) => `${p.accepted ? '✓' : p.skipped ? '–' : '·'} ${p.title}`).join(' · ') || 'Tidak ada rencana.'}</p>
@@ -949,8 +980,10 @@ const Pages = (() => {
             <button class="btn btn-soft btn-sm" type="button" data-action="export-md">${UI.downloadIcon()} Ekspor ringkasan MD</button>
             <button class="btn btn-soft btn-sm" type="button" data-action="export-ics">${UI.downloadIcon()} Ekspor jadwal kalender</button>
             <button class="btn btn-soft btn-sm" type="button" data-action="import-trigger">${ic('download', 16)} Impor JSON</button>
+            <button class="btn btn-soft btn-sm" type="button" data-action="cleanup-fake-reviews">${ic('trash', 16)} Bersihkan laporan 0%</button>
           </div>
           <p class="hint" id="last-backup-note">${esc(backupText)}</p>
+          <p class="hint">“Bersihkan laporan 0%” hanya menghapus laporan dari minggu sebelum aplikasi pertama dipakai; riwayat centang Anda tidak diubah.</p>
           <p class="hint">Data disimpan di browser perangkat ini. Berkas ekspor berisi catatan pribadi—simpan di lokasi privat dan jangan diunggah ke tempat publik.</p>
         </section>
 
@@ -1548,6 +1581,10 @@ const Pages = (() => {
     'export-md'() { exportMarkdown(); },
     'export-ics'() { exportICS(); }, // N-01.2: pengingat kalender tanpa tab terbuka
     'import-trigger'() { document.getElementById('import-file').click(); },
+    'cleanup-fake-reviews'() {
+      const n = Store.cleanupFakeReviews();
+      UI.toast(n ? `${n} laporan 0% sebelum pemakaian dihapus.` : 'Tidak ada laporan 0% yang perlu dibersihkan.', n ? 'success' : 'info');
+    },
     async 'reset-data'() {
       const ok = await UI.confirm('Kembalikan data awal?', 'Seluruh aktivitas, catatan, stok, riwayat, dan laporan evaluasi akan diganti dengan data bawaan. Ekspor data terlebih dahulu jika ingin menyimpannya.', 'Ya, kembalikan');
       if (!ok) return;

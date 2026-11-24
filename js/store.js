@@ -2,7 +2,7 @@
 const Store = (() => {
   const KEY = 'rutin-buah:v1';
   const BACKUP_KEY = KEY + ':pre-import';
-  const SCHEMA_VERSION = 3;
+  const SCHEMA_VERSION = 4;
   const { mergeDefaults, dateKey, weekKey, dow, parseTime, dayName, number } = Utils;
 
   const arr = (v, fb) => (Array.isArray(v) ? v : fb);
@@ -14,9 +14,12 @@ const Store = (() => {
   const TWO_STEP_MIN = 20;
   const GRACE_MAX = 30;
   const REVIEW_KEEP = 4;
+  const REVIEW_MAX_TOTAL = 8;
+  const REVIEW_HOLD_DAYS = 14;
   const CATCHUP_MAX = 4;
   const REVIEW_TTL_DAYS = 28;
-  const REVIEW_RULE_VERSION = 3;
+  const DAY_PLAN_MAX = 35;
+  const REVIEW_RULE_VERSION = 4;
   const STORED_STATUS = new Set(['inprogress', 'completed', 'skipped', 'excused']);
   const RECORD_SRC = new Set(['live', 'grace', 'legacy', 'rest']);
 
@@ -26,6 +29,12 @@ const Store = (() => {
       settings: JSON.parse(JSON.stringify(Seed.settings)),
       activities: Seed.buildActivities(Seed.settings),
       completion: {},
+      // v4: kapan aplikasi pertama dipakai. Dipakai agar tidak membuat laporan
+      // untuk minggu sebelum instalasi.
+      firstUseAt: new Date().toISOString(),
+      // v4: snapshot jadwal harian ringan (pendahulu daySnapshots S9) agar
+      // laporan catch-up memakai jadwal saat hari itu berlalu.
+      dayPlans: {},
       // v3: snapshot evaluasi & hari istirahat. completion sengaja tidak dibatasi.
       weeklyReviews: {},
       restDays: [],
@@ -45,6 +54,30 @@ const Store = (() => {
       lastBackupAt: '', // D-07: penanda cadangan terakhir (ekspor JSON)
       updatedAt: new Date().toISOString()
     };
+  }
+
+  function validISO(value) {
+    const s = str(value);
+    if (!s) return false;
+    return Number.isFinite(Date.parse(s));
+  }
+
+  /** v4: jadwal harian dibekukan sekali, cukup untuk 35 hari terakhir. */
+  function normalizeDayPlans(raw) {
+    const out = {};
+    const cutoff = dateKey(Utils.addDays(new Date(), -(DAY_PLAN_MAX - 1)));
+    Object.entries(obj(raw, {})).forEach(([key, value]) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || key < cutoff || !Array.isArray(value)) return;
+      const rows = value
+        .filter((a) => a && a.id && str(a.startTime))
+        .map((a) => ({
+          id: str(a.id), title: str(a.title) || 'Aktivitas',
+          startTime: str(a.startTime), endTime: str(a.endTime || a.startTime),
+          category: str(a.category) || 'Pribadi'
+        }));
+      if (rows.length) out[key] = rows;
+    });
+    return out;
   }
 
   /* ---------- C.3: satu pembaca status (string lama atau objek v3) ---------- */
@@ -101,6 +134,7 @@ const Store = (() => {
         downloadedFormat: str(review.downloadedFormat) || null,
         status: review.status === 'preview' ? 'preview' : 'final',
         items: arr(review.items, []),
+        waiting: arr(review.waiting, []),
         insights: arr(review.insights, []),
         plan: arr(review.plan, [])
       };
@@ -132,6 +166,16 @@ const Store = (() => {
       // R-02: data yang sudah terkenal duplikat ikut dibersihkan saat migrasi.
       s.activities = dedupeActivities(arr(s.activities, []));
       s.completion = normalizeCompletion(s.completion);
+    }
+    if (version < 4) {
+      // v1.2.2: perkiraan awal pemakaian = tanggal completion terawal,
+      // lalu updatedAt, lalu sekarang. Tidak menghapus laporan lama otomatis.
+      const days = Object.keys(obj(s.completion, {}))
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d))
+        .sort();
+      s.firstUseAt = days.length
+        ? new Date(Utils.atMinutes(days[0], 0)).toISOString()
+        : validISO(s.updatedAt) ? str(s.updatedAt) : new Date().toISOString();
     }
     const weeks = new Set(arr(s.generatedWeeks, []));
     s.shopping.forEach((item) => weeks.add(item.weekKey));
@@ -187,7 +231,25 @@ const Store = (() => {
     s.mentorshipNotes = str(src.mentorshipNotes, '');
     s.lastBackupAt = str(src.lastBackupAt, s.lastBackupAt);
     s.updatedAt = str(src.updatedAt, new Date().toISOString());
+    s.firstUseAt = validISO(src.firstUseAt) ? str(src.firstUseAt) : s.firstUseAt;
+    s.dayPlans = normalizeDayPlans(src.dayPlans || s.dayPlans);
     return migrate(s);
+  }
+
+  /** B.0.5: simpan raw sebelum migrasi; satu slot terbaru saja. */
+  function backupBeforeMigration(raw, parsed) {
+    const from = number(parsed && parsed.version, 1);
+    if (from >= SCHEMA_VERSION) return;
+    try {
+      const prefix = KEY + ':pre-migrate-v';
+      const keys = typeof localStorage.length === 'number' && typeof localStorage.key === 'function'
+        ? Array.from({ length: localStorage.length }, (_, i) => localStorage.key(i)).filter(Boolean)
+        : [];
+      keys.filter((k) => k.startsWith(prefix)).forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(prefix + from, raw);
+    } catch (err) {
+      console.warn('Cadangan pra-migrasi gagal dibuat.', err);
+    }
   }
 
   function readRaw() {
@@ -203,7 +265,9 @@ const Store = (() => {
         localStorage.setItem(KEY, JSON.stringify(initial));
         return initial;
       }
-      return ensureWeekShopping(normalizeState(JSON.parse(raw)));
+      const parsed = JSON.parse(raw);
+      backupBeforeMigration(raw, parsed);
+      return ensureWeekShopping(normalizeState(parsed));
     } catch (err) {
       console.error('Gagal memuat data, menggunakan data awal.', err);
       try { localStorage.setItem(KEY + ':corrupt-' + Date.now(), readRaw() || ''); } catch { /* abbaikan */ }
@@ -220,7 +284,9 @@ const Store = (() => {
     try {
       const raw = readRaw();
       if (!raw) return false;
-      const fresh = ensureWeekShopping(normalizeState(JSON.parse(raw)));
+      const parsed = JSON.parse(raw);
+      backupBeforeMigration(raw, parsed);
+      const fresh = ensureWeekShopping(normalizeState(parsed));
       state = fresh;
       // Hanya beri tahu bila dipanggil eksplisit dari penangan event storage,
       // bukan dari update() internal (kalau tidak, setiap klik memicu toast sinkron).
@@ -504,8 +570,13 @@ const Store = (() => {
       const day = s.completion[key] || (s.completion[key] = {});
       activitiesForDayIn(s, key).forEach((a) => {
         const prev = normRecord(day[a.id]);
-        if (on) day[a.id] = { s: 'excused', startedAt: null, at: now.toISOString(), src: 'rest' };
-        else if (prev && prev.s === 'excused' && prev.src === 'rest') delete day[a.id];
+        // V3-02: hari istirahat tidak boleh menimpa catatan yang sudah ada.
+        if (on) {
+          if (prev && ['completed', 'inprogress', 'skipped'].includes(prev.s)) return;
+          day[a.id] = { s: 'excused', startedAt: null, at: now.toISOString(), src: 'rest' };
+        } else if (prev && prev.s === 'excused' && prev.src === 'rest') {
+          delete day[a.id];
+        }
       });
       outcome = { ok: true, on, used: on ? used + (already ? 0 : 1) : Math.max(0, used - 1) };
     });
@@ -514,7 +585,7 @@ const Store = (() => {
 
   /* ---------- Selektor ---------- */
 
-  /** F-02: tanggal diperiksa lebih dulu, baru jam. */
+  /** F-02/V3-05: status tampilan turunan windowFor(), bukan logika jam kedua. */
   function activityStatus(activity, date) {
     const saved = statusOf(state.completion[dateKey(date)]?.[activity.id]);
     if (saved === 'completed' || saved === 'skipped' || saved === 'excused') return saved;
@@ -524,12 +595,12 @@ const Store = (() => {
     if (key < today) return saved === 'inprogress' ? 'inprogress' : 'missed';
     if (key > today) return 'upcoming';
     if (saved === 'inprogress') return 'inprogress';
-    const current = now.getHours() * 60 + now.getMinutes();
-    const start = parseTime(activity.startTime) ?? 0;
-    const end = Math.max(start, parseTime(activity.endTime) ?? start);
-    if (current >= end) return 'missed';
-    if (current >= start) return 'ongoing';
-    return 'upcoming';
+    const win = windowFor(activity, key, now);
+    if (!win.ok) return 'upcoming';
+    if (now < win.opensAt) return 'upcoming';
+    if (now < win.closesAt) return 'ongoing';
+    if (now < win.lastTick) return 'grace';
+    return 'missed';
   }
 
   function progressForDate(date) {
@@ -734,6 +805,35 @@ const Store = (() => {
     return dateKey(Utils.addDays(Utils.fromKey(weekStartKey), -7 * back));
   }
 
+  /** V3-08: bekukan jadwal hari yang sudah lewat saat app pertama dibuka setelahnya. */
+  function freezeDayPlans(target, now = new Date()) {
+    target.dayPlans = normalizeDayPlans(target.dayPlans);
+    const firstDay = dateKey(new Date(Date.parse(target.firstUseAt) || now.getTime()));
+    const cutoff = dateKey(Utils.addDays(now, -(DAY_PLAN_MAX - 1)));
+    const start = firstDay > cutoff ? firstDay : cutoff;
+    const yesterdayKey = dateKey(Utils.addDays(now, -1));
+    let cursor = new Date(Utils.atMinutes(start, 0));
+    while (dateKey(cursor) <= yesterdayKey) {
+      const key = dateKey(cursor);
+      if (!target.dayPlans[key]) {
+        const rows = activitiesForDayIn(target, cursor).map((a) => ({
+          id: a.id, title: a.title || 'Aktivitas',
+          startTime: a.startTime, endTime: a.endTime || a.startTime,
+          category: a.category || 'Pribadi'
+        }));
+        if (rows.length) target.dayPlans[key] = rows;
+      }
+      cursor = Utils.addDays(cursor, 1);
+    }
+  }
+
+  /** buildReview memakai snapshot harian bila tersedia; jadwal sekarang hanya fallback. */
+  function scheduleForDate(target, date) {
+    const frozen = (target.dayPlans || {})[dateKey(date)];
+    if (frozen) return frozen.slice().sort((a, b) => (parseTime(a.startTime) ?? 0) - (parseTime(b.startTime) ?? 0));
+    return activitiesForDayIn(target, date);
+  }
+
   function isExpired(review, now = new Date()) {
     if (!review || review.status !== 'final') return false;
     const ms = Date.parse(review.expiresAt);
@@ -750,12 +850,12 @@ const Store = (() => {
   function buildReview(target, weekStartKey, status) {
     const times = reviewTimes(weekStartKey);
     const days = Utils.weekDates(Utils.fromKey(weekStartKey));
-    const items = [], skippedItems = [], daily = [];
+    const items = [], skippedItems = [], waiting = [], daily = [];
     let done = 0, unfinished = 0, excused = 0;
     days.forEach((date) => {
       const key = dateKey(date);
       const rec = (target.completion || {})[key] || {};
-      const acts = activitiesForDayIn(target, date);
+      const acts = scheduleForDate(target, date);
       // Aktivitas dihapus di tengah minggu tetap dihitung sampai hari penghapusan.
       const restored = Object.keys(rec)
         .filter((id) => !acts.some((a) => a.id === id))
@@ -777,6 +877,13 @@ const Store = (() => {
           return;
         }
         if (s === 'completed') { done += 1; dayDone += 1; dayTotal += 1; return; }
+        // V3-07: pratinjau Minggu 21.00 tidak menghitung aktivitas yang belum waktunya.
+        const startMin = parseTime(a.startTime);
+        const startAt = startMin == null ? null : Utils.atMinutes(key, startMin);
+        if (status === 'preview' && startAt != null && startAt > times.previewAt) {
+          waiting.push({ date: key, id: a.id, title: a.title, time: a.startTime || '', reason: 'Menunggu' });
+          return;
+        }
         dayTotal += 1;
         unfinished += 1;
         items.push({
@@ -815,7 +922,7 @@ const Store = (() => {
         date: i.date,
         title: i.title,
         time: i.time,
-        action: i.reason === 'Sedang berjalan' ? 'Lanjutkan dan selesaikan' : 'Jadwalkan ulang di hari berikutnya',
+        action: i.reason === 'Sedang berjalan' ? 'Lanjutkan dan selesaikan' : 'Usulan (belum terjadwal otomatis)',
         accepted: false,
         skipped: false
       }));
@@ -833,7 +940,8 @@ const Store = (() => {
       score, done, total, unfinished,
       skippedCount: skippedItems.length,
       excusedCount: excused,
-      items, skippedItems, daily,
+      waitingCount: waiting.length,
+      items, skippedItems, waiting, daily,
       insights: insights.slice(0, 3),
       plan
     };
@@ -841,15 +949,25 @@ const Store = (() => {
 
   function pruneReviews(target, now) {
     const all = obj(target.weeklyReviews, {});
+    const ms = now.getTime();
     Object.keys(all).forEach((k) => {
-      if (isExpired(all[k], now) && all[k].seen) delete all[k];
+      const r = all[k];
+      const expiry = Date.parse(r && r.expiresAt);
+      if (isExpired(r, now) && r.seen) { delete all[k]; return; }
+      // V3-04: penahanan "belum dibuka" punya batas keras 14 hari.
+      if (r && r.status === 'final' && Number.isFinite(expiry) && expiry + REVIEW_HOLD_DAYS * 86400000 <= ms) delete all[k];
     });
-    // D.3: hanya 4 laporan final terbaru yang disimpan. Yang kedaluwarsa belum
-    // dibuka sengaja ditahan agar pengguna sempat melihatnya sekali.
+    // Empat laporan final terbaru yang masih berlaku, dan maksimal delapan
+    // laporan final tersimpan secara keseluruhan.
     Object.entries(all)
       .filter(([, r]) => r.status === 'final' && !isExpired(r, now))
       .sort((a, b) => b[0].localeCompare(a[0]))
       .slice(REVIEW_KEEP)
+      .forEach(([k]) => { delete all[k]; });
+    Object.entries(all)
+      .filter(([, r]) => r.status === 'final')
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(REVIEW_MAX_TOTAL)
       .forEach(([k]) => { delete all[k]; });
     target.weeklyReviews = all;
   }
@@ -859,12 +977,23 @@ const Store = (() => {
     let created = 0, promoted = 0;
     update((s) => {
       s.weeklyReviews = obj(s.weeklyReviews, {});
+      freezeDayPlans(s, now);
       const current = weekKey(now);
+      const firstUse = Date.parse(s.firstUseAt);
       // back=0 penting: pratinjau Minggu 21.00 dibuat untuk minggu yang masih berjalan.
       for (let back = 0; back <= CATCHUP_MAX; back += 1) {
         const wk = previousWeekKey(current, back);
         const times = reviewTimes(wk);
         const at = now.getTime();
+        // V3-01: jangan membuat laporan untuk minggu sebelum aplikasi dipakai.
+        const weekStart = Utils.atMinutes(wk, 0);
+        const weekEnd = Utils.atMinutes(wk, 7 * 1440);
+        if (Number.isFinite(firstUse) && weekEnd <= firstUse) continue;
+        if (Number.isFinite(firstUse) && weekStart <= firstUse && firstUse < weekEnd) {
+          const hasCompletion = Utils.weekDates(Utils.fromKey(wk))
+            .some((d) => Object.keys((s.completion || {})[dateKey(d)] || {}).length);
+          if (!hasCompletion) continue;
+        }
         if (at < times.previewAt) continue;
         const want = at >= times.finalAt ? 'final' : 'preview';
         const existing = s.weeklyReviews[wk];
@@ -942,6 +1071,24 @@ const Store = (() => {
     return changed;
   }
 
+  /** V3-01: hapus hanya laporan 0% dari minggu sebelum firstUseAt. */
+  function cleanupFakeReviews() {
+    const firstUse = Date.parse(state.firstUseAt);
+    if (!Number.isFinite(firstUse)) return 0;
+    let removed = 0;
+    update((s) => {
+      Object.entries(obj(s.weeklyReviews, {})).forEach(([key, r]) => {
+        if (!r || r.status !== 'final' || Utils.atMinutes(key, 7 * 1440) > firstUse) return;
+        if (number(r.total, 0) > 0 && number(r.done, 0) === 0 && number(r.skippedCount, 0) === 0) {
+          delete s.weeklyReviews[key];
+          removed += 1;
+        }
+      });
+    }, true);
+    if (removed) document.dispatchEvent(new CustomEvent('app:changed'));
+    return removed;
+  }
+
   function reviewFileName(weekStartKey) {
     const r = state.weeklyReviews[weekStartKey];
     const monday = Utils.fromKey(weekStartKey);
@@ -952,6 +1099,9 @@ const Store = (() => {
     const r = reviewFor(weekStartKey, now);
     if (!r) return '';
     const when = (v) => v ? new Date(v).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' }) : '-';
+    const expiryMs = Date.parse(r.expiresAt);
+    const deletedAfter = Number.isFinite(expiryMs)
+      ? Utils.formatDate(new Date(expiryMs + REVIEW_HOLD_DAYS * 86400000)) : '—';
     const start = Utils.fromKey(r.weekKey);
     const end = Utils.addDays(start, 6);
     const lines = [
@@ -979,13 +1129,14 @@ const Store = (() => {
       '|---|---:|---:|---:|',
       ...r.daily.map((d) => `| ${d.label} | ${d.done} | ${d.total} | ${d.pct}% |`),
       '',
-      `Laporan ini akan dihapus pada hari ${when(r.expiresAt)} bila belum diunduh dan sudah dibuka.`
+      `Salinan ini milik Anda. Laporan di app dihapus setelah ${deletedAfter}.`
     ];
     return lines.join('\n');
   }
 
   return {
     KEY, BACKUP_KEY, SCHEMA_VERSION, APP_VERSION: Utils.APP_VERSION,
+    REVIEW_HOLD_DAYS, REVIEW_MAX_TOTAL, DAY_PLAN_MAX,
     get state() { return state; }, update, persist, persistSoon, flush, reset, importData, exportData, describeImport,
     markBackup, backupAgeDays,
     normalizeState, reloadFromStorage, refreshWeek, ensureWeekShopping,
@@ -993,7 +1144,7 @@ const Store = (() => {
     statusOf, progressForDate, weekProgress, applyTemplate, saveMentorNotes,
     activityStatus,
     ensureReviews, reviewFor, reviewList, reviewStats, markReviewSeen, markReviewDownloaded,
-    setPlanDecision, reviewMarkdown, reviewFileName, isExpired, daysLeft,
+    setPlanDecision, cleanupFakeReviews, reviewMarkdown, reviewFileName, isExpired, daysLeft,
     nearestTasks, fruitKinds, consumptionForDate, servingsForDate, servingsForWeek, dailyTarget, weeklyTarget,
     activeInventory, consumeSoonInventory, isConsumeSoon, consumeSoonReason, servingsToQty, stockUseLabel, deductStock,
     currentWeekShopping, shoppingTotals, reminderFor, setReminder, targetForDay, taskStats, fruitById, nextShoppingReminder

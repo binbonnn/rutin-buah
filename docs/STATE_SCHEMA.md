@@ -1,12 +1,12 @@
 # Skema State Lokal — `rutin-buah:v1`
 
-Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 3` (`APP_VERSION = 1.2.1`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
+Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 4` (`APP_VERSION = 1.2.2`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
 
 ## Bentuk umum
 
 ```js
 {
-  version: 3,
+  version: 4,
   settings: {
     name, theme: 'system' | 'light' | 'dark', onboarded: boolean,
     timezone: string,              // kompatibilitas lama; tidak dipakai UI
@@ -26,6 +26,10 @@ Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci *
   },
   activities: [ /* template aktivitas mingguan */ ],
   completion: { 'YYYY-MM-DD': { [activityId]: record } },
+  firstUseAt: ISODateString,                // v4: kapan aplikasi pertama dipakai
+  dayPlans: {                               // v4: jadwal harian yang dibekukan, maks. 35 hari
+    'YYYY-MM-DD': [{ id, title, startTime, endTime, category }]
+  },
   weeklyReviews: { 'YYYY-MM-DD': review },  // kunci = Senin minggu tersebut
   restDays: ['YYYY-MM-DD'],                 // maks. 2 per minggu
   customTargets: { [1..7]: string },
@@ -66,11 +70,12 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
   weekKey: 'YYYY-MM-DD',            // Senin
   isoWeek: 'YYYY-Www',              // hanya label/nama berkas
   status: 'preview' | 'final',
-  ruleVersion: 3,
+  ruleVersion: 4,
   generatedAt, expiresAt: ISODateString,
   seen: boolean, downloadedAt: ISODateString | null, downloadedFormat: 'md' | null,
-  score: 0..100, done, total, unfinished, skippedCount, excusedCount,
+  score: 0..100, done, total, unfinished, skippedCount, excusedCount, waitingCount,
   items: [{ date, id, title, time, duration, reason }],
+  waiting: [{ date, id, title, time, reason: 'Menunggu' }], // pratinjau: jam belum tiba
   skippedItems: [{ date, id, title, time }],
   daily: [{ key, label, done, total, pct }],
   insights: [/* maksimal 3 */],
@@ -78,7 +83,7 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 }
 ```
 
-`preview` dibuat Minggu 21.00, `final` menggantikannya Senin 09.00. Snapshot final tidak dihitung ulang (B.4). `expiresAt` = 28 hari setelah pembuatan.
+`preview` dibuat Minggu 21.00, `final` menggantikannya Senin 09.00. Snapshot final tidak dihitung ulang (B.4). `expiresAt` = 28 hari setelah pembuatan. Tidak ada laporan untuk minggu yang seluruhnya sebelum `firstUseAt`; pada minggu pertama laporan baru dibuat bila ada catatan `completion`. `waiting` hanya diisi pada `preview` dan tidak ikut dihitung dalam `total`.
 
 ## Invarian penting
 
@@ -90,11 +95,13 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
   - `closesAt = max(tanggal + endTime, opensAt + 10 menit)`; jika `endTime < startTime`, endTime dianggap hari berikutnya. Jika `endTime === startTime` (durasi 0), tetap dipakai minimum 10 menit.
   - `lastTick = closesAt + markGraceMinutes`
   - `canMark = now >= opensAt && now < lastTick`, dan ditolak bila `now >= lastTick` meski tombol masih terlihat.
+  - Status tampilan (`Store.activityStatus()`) memakai jendela yang sama: `upcoming` sebelum `opensAt`, `ongoing` sampai `closesAt`, `grace` (“Segera tutup”) sampai `lastTick`, lalu `missed`. Tidak ada perhitungan jam kedua di UI.
   - Aktivitas dengan durasi ≥ 20 menit wajib `inprogress` terlebih dahulu sebelum `completed`; aturan ini juga dijaga di `Store.canMark()`.
   - Tanggal sebelum `strictSince` memakai jalur lama (`legacy`) tanpa jendela, agar riwayat tidak berubah.
 - **`completion`** selalu per tanggal dan **tidak** dibatasi retensi. Aktivitas yang dihapus tidak dihapus dari `completion` lama.
-- **`restDays`** maksimal 2 per minggu, hanya untuk hari berjalan, dan dikecualikan dari perhitungan skor (`s: 'excused'`).
-- **Retensi laporan**: hanya 4 laporan `final` terbaru yang disimpan. Laporan kedaluwarsa yang **belum** dibuka sengaja ditahan agar tampil sekali; setelah `seen = true`, `pruneReviews()` langsung menghapusnya. `completion` tidak ikut terhapus.
+- **`restDays`** maksimal 2 per minggu, hanya untuk hari berjalan, dan dikecualikan dari perhitungan skor (`s: 'excused'`). Hari istirahat tidak boleh menimpa catatan `completed`/`inprogress`/`skipped`; membatalkannya hanya menghapus `excused` yang ber-`src: 'rest'`.
+- **`dayPlans`** berisi jadwal harian yang dibekukan sekali saat hari tersebut sudah lewat (maksimal 35 hari). `buildReview()` memakainya sebagai sumber jadwal agar edit di masa kini tidak mengubah laporan lama; `completion` tidak pernah dibekukan atau dipangkas.
+- **Retensi laporan**: hanya 4 laporan `final` terbaru yang disimpan, dengan batas keras 8 laporan `final` secara keseluruhan. Laporan kedaluwarsa yang **belum** dibuka sengaja ditahan agar tampil sekali, paling lambat 14 hari setelah `expiresAt`; setelah `seen = true`, `pruneReviews()` langsung menghapusnya. `completion` tidak ikut terhapus.
 - **`shopping`** memiliki `id` unik per minggu dan `templateId` yang sama untuk item turunan. Tidak ada pemotongan senyap: `generatedWeeks` menentukan minggu yang sudah dibuat.
 - **`inventory`** menyimpan `quantityRemaining`, `unit`, `servingSize`, `servingUnit`, `purchaseDate`, dan `storageLocation`. Status manual `consume-soon` mempercepat penandaan; selain itu penandaan dihitung otomatis dari usia stok dan panduan lokasi penyimpanan (`Store.consumeSoonReason`).
 - **`notified`** dipangkas saat `load()` sehingga hanya 14 hari terakhir yang tersisa. Kunci pengingat cadangan memakai akhiran `:backup-reminder`.
@@ -103,22 +110,24 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
 
 ## Migrasi & cadangan
 
-1. Cadangan lama (`version` < 2) dinormalisasi: item belanja dengan ID duplikat diberi `Utils.uid('shop')` dan `templateId` diisi dari `id`.
-2. Cadangan `version` < 3: aktivitas dengan ID duplikat dibongkar (edit pengguna diutamakan) dan string `completion` lama diubah menjadi record v3.
-3. Setiap migrasi menambah `weeklyReviews` & `restDays`, mengisi `strictSince` = Senin pekan berjalan bila kosong **atau masih di masa depan**, dan membatasi `markGraceMinutes` ke 0–30.
-4. Jika parsed data cacat, raw disimpan di `rutin-buah:v1:corrupt-<timestamp>` dan aplikasi memakai state awal (safe mode menawarkan unduh data mentah).
-5. Impor JSON divalidasi dengan `Store.describeImport()`; cadangan state saat ini ditulis ke `rutin-buah:v1:pre-import` sebelum ditimpa. Laporan evaluasi yang sudah kedaluwarsa dilewati dan tidak diperpanjang umurnya.
-6. Ekspor JSON menghasilkan pembungkus `{ appVersion, schemaVersion, exportedAt, state }`. Laporan evaluasi hanya diekspor sebagai Markdown `.md`, bukan JSON importable.
+1. Sebelum state diubah, raw versi lama disalin ke `rutin-buah:v1:pre-migrate-v<from>` (`from` = nomor versi sumber). Hanya satu slot terbaru yang dipertahankan; slot lama dibersihkan pada migrasi berikutnya. Cadangan ini dibuat di `load()` dan `reloadFromStorage()`.
+2. Cadangan lama (`version` < 2) dinormalisasi: item belanja dengan ID duplikat diberi `Utils.uid('shop')` dan `templateId` diisi dari `id`.
+3. Cadangan `version` < 3: aktivitas dengan ID duplikat dibongkar (edit pengguna diutamakan) dan string `completion` lama diubah menjadi record v3.
+4. Cadangan `version` < 4: `firstUseAt` diestimasi dari tanggal `completion` terawal, lalu `updatedAt`, lalu waktu migrasi. `dayPlans` dimulai kosong dan diisi saat laporan pertama kali disusun. Laporan lama tidak dihapus otomatis; tombol Pengaturan “Bersihkan laporan 0%” menghapus hanya laporan `final` 0% dari minggu sebelum `firstUseAt`.
+5. Setiap migrasi menambah `weeklyReviews` & `restDays`, mengisi `strictSince` = Senin pekan berjalan bila kosong **atau masih di masa depan**, dan membatasi `markGraceMinutes` ke 0–30.
+6. Jika parsed data cacat, raw disimpan di `rutin-buah:v1:corrupt-<timestamp>` dan aplikasi memakai state awal (safe mode menawarkan unduh data mentah).
+7. Impor JSON divalidasi dengan `Store.describeImport()`; cadangan state saat ini ditulis ke `rutin-buah:v1:pre-import` sebelum ditimpa. Laporan evaluasi yang sudah kedaluwarsa dilewati dan tidak diperpanjang umurnya.
+8. Ekspor JSON menghasilkan pembungkus `{ appVersion, schemaVersion, exportedAt, state }`. Laporan evaluasi hanya diekspor sebagai Markdown `.md`, bukan JSON importable.
 
 ## Contoh
 
 ```json
 {
-  "appVersion": "1.2.1",
-  "schemaVersion": 3,
-  "exportedAt": "2026-11-23T04:30:00.000Z",
+  "appVersion": "1.2.2",
+  "schemaVersion": 4,
+  "exportedAt": "2026-11-24T04:30:00.000Z",
   "state": {
-    "version": 3,
+    "version": 4,
     "settings": {
       "theme": "system",
       "markGraceMinutes": 10,
@@ -129,6 +138,10 @@ String lama (`'completed'` / `'skipped'`) masih dibaca oleh `Store.statusOf()` d
       "2026-11-23": {
         "a1": { "s": "completed", "startedAt": null, "at": "2026-11-23T07:05:00.000Z", "src": "live", "title": "Subuh", "startTime": "04.10" }
       }
+    },
+    "firstUseAt": "2026-11-23T00:00:00.000Z",
+    "dayPlans": {
+      "2026-11-23": [{ "id": "a1", "title": "Subuh", "startTime": "04.10", "endTime": "04.30", "category": "Ibadah" }]
     },
     "weeklyReviews": {},
     "restDays": []

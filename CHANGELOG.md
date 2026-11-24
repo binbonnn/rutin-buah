@@ -2,6 +2,24 @@
 
 Semua perubahan Signifikan dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/); proyek ini belum memakai Semantic Versioning secara ketat.
 
+## [1.2.2] — 2026-11-24
+
+**Remediasi audit V3 — V3-01 s.d. V3-10**
+
+- **V3-02 (tinggi):** hari istirahat tidak lagi menimpa catatan `completed`/`inprogress`/`skipped`; membatalkannya juga tidak menghapus catatan tersebut.
+- **V3-01 (tinggi):** instalasi baru tidak lagi membuat laporan `final` 0% untuk minggu sebelum aplikasi dipakai. State menyimpan `firstUseAt`; laporan 0% lama bisa dibersihkan lewat tombol di Pengaturan tanpa menyentuh riwayat centang.
+- **V3-04:** laporan kedaluwarsa yang belum dibuka kini dihapus paling lambat 14 hari setelah `expiresAt` dan jumlah laporan `final` dibatasi maksimal 8 (sebelumnya bisa tumbuh tanpa batas).
+- **V3-03:** teks rencana pemulihan diubah menjadi “Usulan (belum terjadwal otomatis)”. Penjadwalan nyata tetap menjadi pekerjaan S1/v1.3.0.
+- **V3-05:** status tampilan kini turunan tunggal `Store.windowFor()`; status `grace` (“Segera tutup”) muncul antara jam tutup dan akhir toleransi, termasuk untuk jadwal lintas tengah malam.
+- **V3-06:** tab aktif pada tema gelap memakai `--primary-bright` agar kontrasnya memadai.
+- **V3-07:** pratinjau Minggu 21.00 tidak lagi menghitung aktivitas yang jamnya belum tiba; aktivitas tersebut dicantumkan terpisah sebagai “menunggu”.
+- **V3-09:** target sentuh `.bento-check` dan `.link-btn` minimum 44 px.
+- **V3-10:** daftar “Yang belum selesai” dikelompokkan per hari, hari terburuk dibuka otomatis, dan maksimal 10 baris tampil awal dengan opsi “Tampilkan semua”.
+- **V3-08:** snapshot harian ringan `dayPlans` dibekukan untuk 35 hari terakhir agar laporan catch-up memakai jadwal saat hari berlalu, bukan jadwal yang sudah diedit.
+- Skema data naik `3 → 4`. Sebelum migrasi, data mentah disalin ke `rutin-buah:v1:pre-migrate-v<from>` dan hanya slot terbaru yang dipertahankan. Kontrak evaluasi naik ke `ruleVersion = 4`; kaki unduhan `.md` kini menyebut tanggal penghapusan yang sebenarnya.
+- Service worker cache bump `rutin-buah-v33` → `rutin-buah-v34`.
+- Tes regresi bertambah `22 → 35` (satu tes perilaku per temuan V3, migrasi schema 4, dan cadangan pra-migrasi).
+
 ## [1.2.1] — 2026-11-23
 
 **Perbaikan Jendela Aktif**

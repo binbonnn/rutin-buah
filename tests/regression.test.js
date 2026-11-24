@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createEnv, singleActivityEnv, ROOT } = require('./helpers');
+const { createEnv, singleActivityEnv, setClock, ROOT } = require('./helpers');
 
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
 
@@ -172,11 +172,12 @@ test('Migrasi v2: string completion lama dibaca sebagai status v3', () => {
     shopping: [], tasks: []
   };
   const migrated = createEnv(legacy).Store.state;
-  assert.equal(migrated.version, 3);
+  assert.equal(migrated.version, 4);
   assert.equal(migrated.activities.length, 1);
   assert.equal(migrated.weeklyReviews && typeof migrated.weeklyReviews, 'object');
   assert.equal(migrated.completion['2026-11-23'][a.id].s, 'completed');
   assert.equal(migrated.completion['2026-11-23'][a.id].src, 'legacy');
+  assert.equal(migrated.firstUseAt, new Date(env.Utils.atMinutes('2026-11-23', 0)).toISOString());
 });
 
 /* ---------------- Evaluasi Mingguan ---------------- */
@@ -206,6 +207,7 @@ function reviewState(count, { expiredKeys = [], status = 'final' } = {}) {
 
 test('D.1: pratinjau Minggu 21.00 lalu final Senin 09.00', () => {
   const env = singleActivityEnv();
+  env.Store.update((s) => { s.firstUseAt = env.date(2026, 10, 1, 8, 0, 0).toISOString(); }, true);
   const previewNow = env.date(2026, 10, 22, 21, 30, 0); // Minggu 21.30
   env.Store.ensureReviews(previewNow);
   const preview = env.Store.reviewFor('2026-11-16', previewNow);
@@ -270,6 +272,7 @@ test('Insight maksimal 3 dan rencana maksimal 5', () => {
   const env = createEnv();
   env.Store.update((s) => {
     s.settings.strictSince = '2000-01-01';
+    s.firstUseAt = env.date(2026, 10, 1, 8, 0, 0).toISOString();
     s.activities = Array.from({ length: 6 }, (_, i) => ({
       id: 'x' + i, title: 'Aktivitas ' + i, dayOfWeek: 1, category: 'Pribadi',
       startTime: '07.' + String(i).padStart(2, '0'), endTime: '08.' + String(i).padStart(2, '0'),
@@ -319,4 +322,223 @@ test('F-11: interval memakai pembaruan terarah, bukan render penuh', () => {
   const app = read('js/app.js');
   assert.match(app, /else Pages\.refreshLiveStates\(\);/);
   assert.match(app, /function syncReviews\(\)/);
+});
+
+/* ---------------- v1.2.2: audit V3 ---------------- */
+
+test('Schema 4: cadangan pra-migrasi ditulis sebelum data diubah', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const legacy = { ...base, version: 3 };
+  const env = createEnv(legacy);
+  assert.equal(env.storage.get('rutin-buah:v1:pre-migrate-v3'), JSON.stringify(legacy));
+  // Migrasi terjadi di memori dulu; data lama belum ditimpa sampai persist().
+  assert.equal(env.saved().version, 3);
+  assert.equal(env.Store.state.version, 4);
+  assert.ok(env.Store.state.firstUseAt, 'firstUseAt harus terisi setelah migrasi');
+});
+
+test('Schema 4: slot pra-migrasi lama dibersihkan saat migrasi berikutnya', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const legacy = { ...base, version: 3 };
+  const env = createEnv(legacy);
+  env.storage.set('rutin-buah:v1', JSON.stringify(legacy));
+  env.storage.set('rutin-buah:v1:pre-migrate-v2', 'cadangan usang');
+  env.Store.reloadFromStorage();
+  assert.equal(env.storage.has('rutin-buah:v1:pre-migrate-v2'), false);
+  assert.equal(env.storage.has('rutin-buah:v1:pre-migrate-v3'), true);
+});
+
+test('V3-01: instalasi baru tidak membuat laporan minggu sebelum dipakai', () => {
+  const env = createEnv();
+  env.Store.ensureReviews(new Date());
+  assert.deepEqual(Object.keys(env.Store.state.weeklyReviews), []);
+});
+
+test('V3-01: minggu pertama baru dilaporkan bila ada catatan completion', () => {
+  const env = createEnv();
+  const monday = env.Utils.startOfWeek(new Date());
+  const firstUse = env.Utils.addDays(monday, 1);
+  const sunday = env.Utils.addDays(monday, 6);
+  const sundayNow = new Date(env.Utils.atMinutes(env.Utils.dateKey(sunday), 21 * 60 + 5));
+  env.Store.update((s) => {
+    s.firstUseAt = new Date(env.Utils.atMinutes(env.Utils.dateKey(firstUse), 9 * 60)).toISOString();
+  }, true);
+  env.Store.ensureReviews(sundayNow);
+  assert.equal(env.Store.reviewFor(env.Utils.dateKey(monday), sundayNow), null);
+
+  const key = env.Utils.dateKey(firstUse);
+  env.Store.update((s) => {
+    s.completion[key] = { a1: { s: 'completed', at: new Date().toISOString(), src: 'live' } };
+  }, true);
+  env.Store.ensureReviews(sundayNow);
+  const review = env.Store.reviewFor(env.Utils.dateKey(monday), sundayNow);
+  assert.equal(review.status, 'preview');
+  assert.equal(review.done, 1);
+});
+
+test('V3-01: bersihkan hanya laporan 0% dari minggu sebelum pemakaian', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const make = (weekKey, done) => ({
+    weekKey, status: 'final', done, total: 10, skippedCount: 0,
+    generatedAt: new probe.date(2026, 10, 19, 9, 0, 0).toISOString(),
+    expiresAt: new probe.date(2026, 12, 30, 9, 0, 0).toISOString(),
+    seen: false, items: [], waiting: [], insights: [], plan: [], daily: []
+  });
+  const env = createEnv({
+    ...base,
+    firstUseAt: new probe.date(2026, 10, 26, 9, 0, 0).toISOString(),
+    weeklyReviews: { '2026-10-12': make('2026-10-12', 0), '2026-11-16': make('2026-11-16', 2) }
+  });
+  assert.equal(env.Store.cleanupFakeReviews(), 1);
+  assert.equal(env.Store.state.weeklyReviews['2026-10-12'], undefined);
+  assert.ok(env.Store.state.weeklyReviews['2026-11-16'], 'laporan dengan catatan tidak boleh terhapus');
+});
+
+test('V3-02: hari istirahat tidak menimpa atau menghapus penandaan selesai', () => {
+  const env = singleActivityEnv();
+  const todayKey = env.Utils.dateKey(new Date());
+  const day = env.Utils.dow(new Date());
+  env.Store.update((s) => {
+    s.activities = [
+      { ...s.activities[0], dayOfWeek: day },
+      { id: 'a2', title: 'Aktivitas kedua', dayOfWeek: day, category: 'Pribadi', startTime: '07.00', endTime: '08.00', isRecurring: true, isTemplate: false }
+    ];
+    s.completion = {};
+  }, true);
+  const nowStart = env.date(env.Utils.atMinutes(todayKey, 7 * 60 + 5));
+  const now = env.date(env.Utils.atMinutes(todayKey, 7 * 60 + 30));
+  assert.equal(env.Store.setActivityStatus('a1', todayKey, 'inprogress', { now: nowStart }).ok, true);
+  assert.equal(env.Store.setActivityStatus('a1', todayKey, 'completed', { now }).ok, true);
+  assert.equal(env.Store.setRestDay(todayKey, true).ok, true);
+  assert.equal(env.Store.statusOf(env.Store.state.completion[todayKey].a1), 'completed');
+  assert.equal(env.Store.statusOf(env.Store.state.completion[todayKey].a2), 'excused');
+  assert.equal(env.Store.setRestDay(todayKey, false).ok, true);
+  assert.equal(env.Store.statusOf(env.Store.state.completion[todayKey].a1), 'completed');
+  assert.equal(env.Store.statusOf(env.Store.state.completion[todayKey].a2), '');
+});
+
+test('V3-04: laporan kedaluwarsa belum dibuka dihapus setelah 14 hari', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const key = '2026-09-07';
+  const env = createEnv({
+    ...base,
+    firstUseAt: '2026-01-01T00:00:00.000Z',
+    weeklyReviews: {
+      [key]: {
+        weekKey: key, status: 'final', done: 0, total: 10, skippedCount: 0,
+        generatedAt: new probe.date(2026, 10, 5, 9, 0, 0).toISOString(),
+        expiresAt: new probe.date(2026, 10, 1, 9, 0, 0).toISOString(),
+        seen: false, items: [], waiting: [], insights: [], plan: [], daily: []
+      }
+    }
+  });
+  env.Store.ensureReviews(env.date(2026, 10, 23, 12, 0, 0));
+  assert.equal(env.Store.state.weeklyReviews[key], undefined);
+});
+
+test('V3-04: jumlah laporan final tidak melebihi delapan', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const reviews = {};
+  for (let i = 0; i < 12; i += 1) {
+    const d = probe.Utils.addDays(probe.date(2026, 10, 26), -7 * i);
+    const key = probe.Utils.dateKey(d);
+    reviews[key] = {
+      weekKey: key, status: 'final', done: 2, total: 10, skippedCount: 0,
+      generatedAt: new probe.date(2026, 9, 30, 9, 0, 0).toISOString(),
+      expiresAt: new probe.date(2026, 10, 28, 9, 0, 0).toISOString(),
+      seen: false, items: [], waiting: [], insights: [], plan: [], daily: []
+    };
+  }
+  const env = createEnv({ ...base, firstUseAt: '2026-01-01T00:00:00.000Z', weeklyReviews: reviews });
+  env.Store.ensureReviews(env.date(2026, 10, 1, 12, 0, 0));
+  const finals = Object.values(env.Store.state.weeklyReviews).filter((r) => r.status === 'final');
+  assert.ok(finals.length > 0 && finals.length <= env.Store.REVIEW_MAX_TOTAL);
+});
+
+test('V3-05: status tampilan mengikuti jendela, grace, dan jadwal lintas tengah malam', () => {
+  // Aktivitas pendek memakai satu langkah, jadi grace bisa diuji langsung.
+  const env = singleActivityEnv({ start: '07.45', end: '07.55' });
+  const key = '2026-11-23';
+  const at = (minutes) => new Date(env.Utils.atMinutes(key, minutes)).toISOString();
+  const activity = env.Store.state.activities[0];
+  setClock(env, at(7 * 60 + 50));
+  assert.equal(env.Store.activityStatus(activity, key), 'ongoing');
+  setClock(env, at(8 * 60));
+  assert.equal(env.Store.activityStatus(activity, key), 'grace');
+  assert.equal(env.Store.canMark(activity, key).ok, true);
+  setClock(env, at(8 * 60 + 6));
+  assert.equal(env.Store.activityStatus(activity, key), 'missed');
+
+  const late = { ...activity, id: 'late', startTime: '23.30', endTime: '00.30' };
+  env.Store.update((s) => { s.activities = [late]; s.completion = {}; }, true);
+  setClock(env, at(23 * 60 + 45));
+  assert.equal(env.Store.activityStatus(late, key), 'ongoing');
+});
+
+test('V3-07: pratinjau tidak menghitung aktivitas yang belum waktunya', () => {
+  const env = singleActivityEnv();
+  env.Store.update((s) => {
+    s.firstUseAt = env.date(2026, 10, 1, 8, 0, 0).toISOString();
+    s.activities = [{
+      id: 'late', title: 'Aktivitas larut', dayOfWeek: 7, category: 'Pribadi',
+      startTime: '21.10', endTime: '21.30', isRecurring: true, isTemplate: false
+    }];
+    s.completion = {};
+  }, true);
+  const now = new Date(env.Utils.atMinutes('2026-11-22', 21 * 60 + 5));
+  env.Store.ensureReviews(now);
+  const r = env.Store.reviewFor('2026-11-16', now);
+  assert.equal(r.status, 'preview');
+  assert.ok(r.waiting.some((i) => i.id === 'late' && i.reason === 'Menunggu'));
+  assert.equal(r.items.some((i) => i.id === 'late'), false);
+  assert.equal(r.total, 0);
+  assert.equal(r.waitingCount, 1);
+});
+
+test('V3-08: laporan catch-up memakai jadwal yang dibekukan saat hari berlalu', () => {
+  const env = singleActivityEnv();
+  env.Store.update((s) => {
+    s.firstUseAt = env.date(2026, 10, 10, 8, 0, 0).toISOString();
+    s.activities = [{
+      id: 'old', title: 'Jadwal lama', dayOfWeek: 1, category: 'Pribadi',
+      startTime: '07.00', endTime: '08.00', isRecurring: true, isTemplate: false
+    }];
+    s.completion = {};
+  }, true);
+  env.Store.ensureReviews(new Date(env.Utils.atMinutes('2026-11-17', 10 * 60)));
+  assert.ok(env.Store.state.dayPlans['2026-11-16'], 'jadwal 16 Nov harus dibekukan');
+  env.Store.update((s) => { s.activities = []; }, true);
+  const reportNow = new Date(env.Utils.atMinutes('2026-11-24', 9 * 60 + 5));
+  env.Store.ensureReviews(reportNow);
+  const r = env.Store.reviewFor('2026-11-16', reportNow);
+  assert.equal(r.status, 'final');
+  assert.ok(r.items.some((i) => i.id === 'old' && i.title === 'Jadwal lama'));
+});
+
+test('V3-03: teks rencana jujur sampai penjadwalan otomatis S1 hadir', () => {
+  const env = singleActivityEnv();
+  env.Store.update((s) => { s.firstUseAt = env.date(2026, 10, 1, 8, 0, 0).toISOString(); }, true);
+  const now = env.date(2026, 10, 26, 9, 30, 0);
+  env.Store.ensureReviews(now);
+  const r = env.Store.reviewList(now)[0];
+  assert.ok(r.plan.length);
+  assert.match(r.plan[0].action, /belum terjadwal otomatis/);
+  assert.doesNotMatch(env.Store.reviewMarkdown(r.weekKey), /akan dihapus pada hari/);
+  assert.match(env.Store.reviewMarkdown(r.weekKey), /Salinan ini milik Anda\. Laporan di app dihapus setelah/);
+});
+
+test('V3-06/V3-09/V3-10: perbaikan tampilan terkait hadir di stylesheet dan markup', () => {
+  const css = read('css/styles.css');
+  const pages = read('js/pages.js');
+  assert.match(css, /\[data-theme="dark"\]\s+\.subtab\.is-active\s*\{\s*color:\s*var\(--primary-bright\)/);
+  assert.match(css, /\.bento-check\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(css, /\.link-btn\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(pages, /function reviewDayGroups\(/);
+  assert.match(pages, /Tampilkan semua \(\$\{rows\.length\}\)/);
+  assert.match(pages, /<details class="review-day"/);
 });

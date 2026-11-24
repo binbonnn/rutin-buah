@@ -121,6 +121,7 @@ const UI = (() => {
   const STATUS = {
     completed: { label: 'Selesai', cls: 'ok' },
     ongoing: { label: 'Berjalan', cls: 'run' },
+    grace: { label: 'Segera tutup', cls: 'warn' },
     upcoming: { label: 'Akan datang', cls: 'idle' },
     missed: { label: 'Terlewat', cls: 'miss' },
     skipped: { label: 'Dilewati', cls: 'skip' },
