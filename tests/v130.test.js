@@ -22,7 +22,7 @@ test('S9: migrasi v5 mengompresi item dan mempertahankan teks lama', () => {
           { kind: 'ringkasan', title: 'Konsisten', count: 80, detail: '1 dari 1 selesai' }
         ],
         plan: [{ id: 'plan-1', activityId: 'a1', title: 'Skripsi', date: WEEK, time: '07.00',
-          action: 'Usulan (belum terjadwal otomatis)', accepted: false, skipped: false }]
+          action: 'Usulan perlu dijadwalkan ulang', accepted: false, skipped: false }]
       }
     }
   };
@@ -35,7 +35,7 @@ test('S9: migrasi v5 mengompresi item dan mempertahankan teks lama', () => {
   assert.equal(env.Store.reviewItems(r)[0].title, 'Skripsi');
   assert.equal(env.Store.reviewItems(r)[0].cat, 'Pribadi');
   assert.equal(r.plan[0].status, 'proposed');
-  assert.equal(r.plan[0].action, 'Usulan (belum terjadwal otomatis)');
+  assert.equal(r.plan[0].action, 'Usulan perlu dijadwalkan ulang');
   assert.equal(r.insights[0].kind, 'legacy');
   assert.match(env.Store.insightText(r.insights[0]), /Konsisten/);
 });
@@ -284,4 +284,156 @@ test('S2: Pages.insightText tersedia dan mengembalikan teks dari data', () => {
   const pages = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'js', 'pages.js'), 'utf8');
   assert.match(pages, /insightText,\s*setViewDate/);
   assert.match(pages, /Data belum cukup untuk saran minggu ini\./);
+});
+
+/* ---------------- Audit: perbaikan yang ditemukan setelah rilis ---------------- */
+
+test('D-01: state tanpa version tetap menjalani migrasi v2', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const legacy = {
+    ...base,
+    version: undefined,
+    shopping: [
+      { id: 'duplikat', templateId: 'duplikat', name: 'Apel', weekKey: '2026-11-23' },
+      { id: 'duplikat', templateId: 'duplikat', name: 'Pir', weekKey: '2026-11-23' }
+    ]
+  };
+  const env = createEnv(JSON.parse(JSON.stringify(legacy)));
+  const ids = env.Store.state.shopping.map((i) => i.id);
+  assert.equal(new Set(ids).size, ids.length, 'ID belanja duplikat harus dibersihkan');
+});
+
+test('D-01: laporan cacat dinormalisasi tanpa RangeError dan Markdown tetap valid', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const env = createEnv({
+    ...base,
+    weeklyReviews: {
+      [WEEK]: {
+        status: 'final', generatedAt: 'bogus', score: 'NaN', total: 'x', done: 'y',
+        items: [{ d: WEEK, id: 'a1', s: 'm' }]
+      }
+    }
+  });
+  const r = env.Store.reviewFor(WEEK);
+  assert.ok(Number.isFinite(Date.parse(r.expiresAt)));
+  assert.ok(Number.isFinite(r.score) && r.score >= 0 && r.score <= 100);
+  assert.equal(r.skippedItems.length, 0);
+  assert.equal(r.isoWeek, env.Utils.isoWeekKey(env.Utils.fromKey(WEEK)));
+  assert.doesNotThrow(() => env.Store.reviewMarkdown(WEEK));
+  assert.doesNotMatch(env.Store.reviewMarkdown(WEEK), /NaN|undefined/);
+});
+
+test('D-01: jam HH:mm dari input disimpan sebagai HH.mm', () => {
+  const probe = createEnv();
+  const base = probe.Store.normalizeState({});
+  const env = createEnv({
+    ...base,
+    settings: { ...base.settings, wakeUpTime: '04:30', bedtime: '21:15' },
+    activities: [{ ...base.activities[0], startTime: '07:00', endTime: '08:00' }]
+  });
+  assert.equal(env.Store.state.activities[0].startTime, '07.00');
+  assert.equal(env.Store.state.activities[0].endTime, '08.00');
+  assert.equal(env.Store.state.settings.wakeUpTime, '04.30');
+  assert.equal(env.Store.state.settings.bedtime, '21.15');
+});
+
+test('D-04: cadangan pra-impor mengambil state terbaru dari localStorage', () => {
+  const env = createEnv();
+  env.Store.update((s) => { s.mentorshipNotes = 'stale'; }, true);
+  const raw = JSON.parse(env.storage.get(env.Store.KEY));
+  raw.mentorshipNotes = 'fresh';
+  env.storage.set(env.Store.KEY, JSON.stringify(raw));
+  env.Store.importData(JSON.stringify({ state: raw }));
+  const pre = JSON.parse(env.storage.get(env.Store.BACKUP_KEY));
+  assert.equal(pre.mentorshipNotes, 'fresh');
+});
+
+test('S1: rencana catch-up tidak membuat aktivitas di tanggal yang sudah lewat', () => {
+  const env = singleActivityEnv();
+  setClock(env, '2026-11-25T03:00:00.000Z'); // 25 Nov 10.00 WIB
+  env.Store.update((s) => { s.firstUseAt = '2026-01-01T00:00:00.000Z'; }, true);
+  // Review ini dibuat seolah-olah pada 23 Nov, tetapi dibuka hari ini.
+  env.Store.ensureReviews(new Date('2026-11-23T02:00:00.000Z'));
+  const r = env.Store.reviewList()[0];
+  assert.ok(r.plan[0].suggested, 'usulan baru harus tetap ada');
+  assert.ok(r.plan[0].suggested.date >= '2026-11-25', `usulan ${r.plan[0].suggested.date} masih masa lalu`);
+
+  env.Store.update((s) => {
+    s.weeklyReviews[r.weekKey].plan[0].suggested = { date: '2026-11-23', start: '09.00', end: '09.20' };
+  }, true);
+  const res = env.Store.acceptPlan(r.weekKey, r.plan[0].id);
+  assert.equal(res.ok, false);
+  assert.match(res.reason, /lewat/);
+  assert.ok(res.suggestion && res.suggestion.date >= '2026-11-25');
+});
+
+test('S1: kuota pemulihan harian tidak boleh dilampaui', () => {
+  const env = singleActivityEnv();
+  setClock(env, '2026-11-25T03:00:00.000Z');
+  env.Store.update((s) => {
+    s.settings.recoveryMaxPerDay = 60;
+    s.activities.push({
+      id: 'rec-lama', title: 'Pemulihan lama', dayOfWeek: 3, category: 'Pribadi',
+      startTime: '11.00', endTime: '11.50', isRecurring: false,
+      date: '2026-11-25', origin: 'recovery'
+    });
+    s.weeklyReviews[WEEK] = {
+      weekKey: WEEK, status: 'final', generatedAt: new Date().toISOString(),
+      expiresAt: '2027-01-01T00:00:00.000Z', plan: [{
+        id: 'p1', title: 'Pemulihan baru', category: 'Pribadi', durationMin: 20, status: 'proposed',
+        suggested: { date: '2026-11-25', start: '11.55', end: '12.15' }
+      }]
+    };
+  }, true);
+  const res = env.Store.acceptPlan(WEEK, 'p1');
+  assert.equal(res.ok, false, '50 + 20 menit melewati batas 60 menit');
+  assert.match(res.reason, /Kuota/);
+  assert.equal(env.Store.state.activities.some((a) => a.id === 'rec-lama'), true);
+});
+
+test('S1: rencana dilewati bisa di-undo, dan hapus kronis tidak muncul lagi', () => {
+  const env = singleActivityEnv();
+  setClock(env, '2026-11-25T03:00:00.000Z');
+  env.Store.update((s) => {
+    s.weeklyReviews[WEEK] = {
+      weekKey: WEEK, status: 'final', generatedAt: new Date().toISOString(),
+      expiresAt: '2027-01-01T00:00:00.000Z', plan: [{
+        id: 'p1', title: 'Skripsi', category: 'Skripsi', durationMin: 20, status: 'proposed',
+        kind: 'chronic', activityId: 't1',
+        suggested: { date: '2026-11-25', start: '11.00', end: '11.20' }
+      }]
+    };
+  }, true);
+  assert.equal(env.Store.skipPlan(WEEK, 'p1'), true);
+  assert.equal(env.Store.state.weeklyReviews[WEEK].plan[0].status, 'skipped');
+  assert.equal(env.Store.undoPlan(WEEK, 'p1').ok, true);
+  assert.equal(env.Store.state.weeklyReviews[WEEK].plan[0].status, 'proposed');
+
+  const deleted = env.Store.resolveChronic(WEEK, 'p1', 'delete');
+  assert.equal(deleted.ok, true);
+  assert.equal(env.Store.state.weeklyReviews[WEEK].plan[0].decision, 'delete');
+  assert.ok(Date.parse(env.Store.state.chronicDismissedUntil.t1) > Date.now());
+});
+
+test('V3-02: hari istirahat tidak menimpa catatan excused non-rest', () => {
+  const env = singleActivityEnv();
+  setClock(env, '2026-11-25T03:00:00.000Z');
+  env.Store.update((s) => {
+    s.completion['2026-11-25'] = {
+      a1: { s: 'excused', src: 'legacy', at: new Date().toISOString(), startedAt: null }
+    };
+  }, true);
+  assert.equal(env.Store.setRestDay('2026-11-25', true).ok, true);
+  assert.equal(env.Store.state.completion['2026-11-25'].a1.src, 'legacy');
+  env.Store.setRestDay('2026-11-25', false);
+  assert.ok(env.Store.state.completion['2026-11-25'].a1, 'record legacy tidak ikut terhapus');
+});
+
+test('S2: awal pekan untuk needsMoreData memakai waktu lokal', () => {
+  const env = createEnv();
+  const first = new Date(2026, 10, 16, 8, 0, 0).toISOString(); // Senin 08.00 lokal
+  const now = new Date(2026, 10, 23, 8, 0, 0); // Senin pekan berikutnya
+  assert.equal(env.Insights.needsMoreData({ weekKey: '2026-11-23', total: 20 }, first, now), false);
 });

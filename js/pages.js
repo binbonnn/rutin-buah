@@ -564,7 +564,9 @@ const Pages = (() => {
           <a class="btn btn-soft btn-sm" href="#/jadwal?date=${encodeURIComponent(p.suggested ? p.suggested.date : '')}">Lihat di Jadwal</a>
           <button class="btn btn-ghost btn-sm" type="button" data-action="plan-undo" data-week="${esc(key)}" data-id="${esc(p.id)}">Undo</button>
         </div>`
-      : skipped ? ''
+      : skipped ? (p.decision === 'delete' ? '' : `<div class="plan-buttons">
+          <button class="btn btn-ghost btn-sm" type="button" data-action="plan-undo" data-week="${esc(key)}" data-id="${esc(p.id)}">Undo</button>
+        </div>`)
         : `<div class="plan-buttons">
             <button class="btn btn-ghost btn-sm" type="button" data-action="plan-edit" data-week="${esc(key)}" data-id="${esc(p.id)}">Ubah jam</button>
             <button class="btn btn-soft btn-sm" type="button" data-action="plan-accept" data-week="${esc(key)}" data-id="${esc(p.id)}">Terima</button>
@@ -660,7 +662,7 @@ const Pages = (() => {
       <section class="card">${UI.section('Yang belum selesai', 'Dikelompokkan per hari')}${unfinished}${waiting}${skipped}</section>
       <section class="card">
         ${UI.section('Rencana pemulihan', `${r.plan.filter((p) => p.status === 'accepted').length} dari ${r.plan.length} diterima`, `<button class="btn btn-soft btn-sm" type="button" data-action="eval-goto-plan">Atur rencana</button>`)}
-        <p class="hint">${r.plan.map((p) => `${p.status === 'accepted' ? '✓' : p.status === 'skipped' ? '–' : '·'} ${p.title}${p.suggested ? ` (${Store.planWhen(p.suggested)})` : ''}`).join(' · ') || 'Tidak ada rencana.'}</p>
+        <p class="hint">${r.plan.map((p) => `${p.status === 'accepted' ? '✓' : p.status === 'skipped' ? '–' : '·'} ${esc(p.title)}${p.suggested ? ` (${Store.planWhen(p.suggested)})` : ''}`).join(' · ') || 'Tidak ada rencana.'}</p>
       </section>
     </div>`;
   }
@@ -895,7 +897,7 @@ const Pages = (() => {
       <div class="stack">
         ${UI.pageHead(`Anggaran ${Utils.rupiah(totals.budget)}`, 'Belanja', 'Rencanakan pembelian buah mingguan dan catat harga sebenarnya.', `
           <button class="btn-icon" type="button" data-action="toggle-budget-lock" aria-label="${budgetLocked ? 'Buka kunci anggaran' : 'Kunci anggaran'}" title="${budgetLocked ? 'Buka kunci anggaran' : 'Kunci anggaran'}">${UI.lockIcon(budgetLocked)}</button>
-          <button class="btn btn-ghost btn-sm" type="button" data-action="edit-budget">${ic('settings', 16)} Atur anggaran</button>`)}
+          <button class="btn btn-ghost btn-sm" type="button" data-action="edit-budget"${budgetLocked ? ' aria-disabled="true" title="Buka kunci anggaran untuk mengubah"' : ''}>${ic('settings', 16)} ${budgetLocked ? 'Anggaran terkunci' : 'Atur anggaran'}</button>`)}
         ${shoppingStepper(items)}
 
         <section class="card budget-card ${totals.over ? 'is-over' : ''}" id="budget-card">
@@ -1351,10 +1353,6 @@ const Pages = (() => {
       if (!res.ok) { UI.toast(res.reason || 'Penandaan tidak bisa dilakukan.', 'info'); return; }
       if (next === 'inprogress') UI.toast('Aktivitas dimulai. Tekan lagi untuk menyelesaikan.', 'info');
     },
-    'activity-undo'(el) {
-      const res = Store.setActivityStatus(el.dataset.id, el.dataset.date, '');
-      if (!res.ok) UI.toast(res.reason || 'Penandaan tidak bisa dibatalkan.', 'info');
-    },
     async 'toggle-rest-day'(el) {
       const key = el.dataset.date;
       const on = !(S().restDays || []).includes(key);
@@ -1371,9 +1369,27 @@ const Pages = (() => {
     'eval-open'(el) { evalWeek = el.dataset.week; evalTab = 'ringkasan'; document.dispatchEvent(new CustomEvent('app:force-render')); },
     'eval-goto-plan'() { evalTab = 'rencana'; document.dispatchEvent(new CustomEvent('app:force-render')); },
     'plan-accept'(el) {
-      const res = Store.acceptPlan(el.dataset.week, el.dataset.id);
-      if (!res.ok) { UI.toast(res.reason || 'Rencana tidak bisa diterima.', 'info'); return; }
-      UI.toast('Rencana diterima; satu aktivitas ditambahkan ke Jadwal.');
+      const week = el.dataset.week;
+      const id = el.dataset.id;
+      const apply = async (override = null) => {
+        const res = Store.acceptPlan(week, id, override);
+        if (!res.ok) {
+          // Usulan revisi (slot terpakai/lewat/kuota) harus dikonfirmasi dulu;
+          // klik kedua tidak boleh diam-diam menerima jadwal baru.
+          if (!override && res.suggestion) {
+            const ok = await UI.confirm(
+              'Konfirmasi jadwal baru',
+              `${res.reason} Usulan: ${Store.planWhen(res.suggestion)}.`,
+              'Terima jadwal ini'
+            );
+            if (ok) { apply(res.suggestion); return; }
+          }
+          UI.toast(res.reason || 'Rencana tidak bisa diterima.', 'info');
+          return;
+        }
+        UI.toast('Rencana diterima; satu aktivitas ditambahkan ke Jadwal.');
+      };
+      apply();
     },
     'plan-skip'(el) {
       if (Store.skipPlan(el.dataset.week, el.dataset.id)) UI.toast('Rencana dilewati.', 'info');
@@ -1645,7 +1661,6 @@ const Pages = (() => {
     'reminder-postpone'(el) { Store.setReminder(el.dataset.session, 'postponed'); UI.toast('Pengingat ditunda.', 'info'); },
     'reminder-reset'(el) { Store.setReminder(el.dataset.session, 'pending'); UI.toast('Pengingat diaktifkan kembali.', 'info'); },
 
-    'save-settings-form'() { saveSettings(); },
     async 'apply-template'() {
       const s = S();
       const deleted = new Set(s.deletedTemplateIds || []);
@@ -1653,11 +1668,10 @@ const Pages = (() => {
       const skipped = s.activities.filter((a) => a.isTemplate && (a.userEdited || deleted.has(a.id))).length;
       const ok = await UI.confirm(
         'Terapkan template jadwal?',
-        `${editable.length} aktivitas bawaan akan diperbarui, ${skipped} dilewati (telah diubah atau dihapus). Aktivitas buatan sendiri dan riwayat checklist tidak tersentuh.`,
+        `${editable.length} aktivitas bawaan akan diperbarui, ${skipped} dilewati (telah diubah atau dihapus). Aktivitas buatan sendiri dan riwayat checklist tidak tersentuh. Perubahan pengaturan lain tidak ikut disimpan; gunakan tombol Simpan pengaturan.`,
         'Terapkan'
       );
       if (!ok) return;
-      saveSettings(true);
       // R-02: satu jalur dengan invarian ID unik di Store, bukan concat mentah.
       const result = Store.applyTemplate();
       UI.toast(`Template diterapkan. ${result.skipped} aktivitas dilewati.`);

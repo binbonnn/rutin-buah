@@ -686,7 +686,7 @@ body.sidebar-open { overflow: hidden; }
 .summary-list { display: flex; flex-direction: column; gap: 10px; }
 .summary-item { display: flex; align-items: center; gap: 10px; }
 .summary-icon { width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center; flex: none; border: 1px solid rgba(255,255,255,.75); }
-.icon-green { background: rgba(110,231,183,.30); color: #047857; }
+.icon-green { background: rgba(110,231,183,.30); color: var(--ok); }
 .icon-amber { background: rgba(251,191,36,.28); color: #92400e; }
 .summary-item strong { display: block; font-size: .84rem; font-weight: 800; }
 .summary-item span:not(.summary-icon) { font-size: var(--fs-xs); color: var(--ink-secondary); }
@@ -783,11 +783,11 @@ body.sidebar-open { overflow: hidden; }
 .task-card-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 7px; font-size: var(--fs-xs); color: var(--ink-secondary); }
 .task-card-meta span { display: inline-flex; align-items: center; gap: 3px; }
 .task-note { font-size: var(--fs-xs); background: var(--inset-fill); border: 1px solid rgba(255,255,255,.72); border-radius: 12px; padding: 7px 9px; margin-top: 8px; }
-.task-card-tools { display: grid; grid-template-columns: repeat(2, 34px); gap: 6px; align-content: start; }
+.task-card-tools { display: grid; grid-template-columns: repeat(2, 44px); gap: 8px; align-content: start; }
 .history-list { display: flex; flex-direction: column; }
 .history-list li { display: flex; align-items: center; gap: 10px; padding: 9px 2px; border-bottom: 1px solid rgba(255,255,255,.60); }
 .history-list li:last-child { border-bottom: 0; }
-.history-dot { width: 26px; height: 26px; border-radius: 50%; background: rgba(110,231,183,.30); color: #047857; display: grid; place-items: center; flex: none; border: 1px solid rgba(255,255,255,.72); }
+.history-dot { width: 26px; height: 26px; border-radius: 50%; background: rgba(110,231,183,.30); color: var(--ok); display: grid; place-items: center; flex: none; border: 1px solid rgba(255,255,255,.72); }
 .history-list div { flex: 1; min-width: 0; }
 .history-list strong { display: block; font-size: .8rem; font-weight: 700; }
 .history-list small { font-size: var(--fs-xs); color: var(--ink-secondary); }
@@ -891,7 +891,9 @@ body.has-modal { overflow: hidden; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 18px 20px 12px; border-bottom: 1px solid var(--white-line-soft); }
 .modal-head h2 { font-size: 1.02rem; font-weight: 800; letter-spacing: -.02em; }
 .modal-body { padding: 18px 20px; overflow-y: auto; flex: 1; }
-.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px calc(16px + env(safe-area-inset-bottom,0px)); border-top: 1px solid var(--white-line-soft); background: rgba(255,255,255,.22); }
+.modal-foot { position: relative; display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px calc(16px + env(safe-area-inset-bottom,0px)); border-top: 1px solid var(--white-line-soft); background: rgba(255,255,255,.22); }
+/* Pesan dirty tampil di dalam dialog (top layer), tidak tertutup toast global. */
+.modal-dirty-hint { position: absolute; left: 20px; right: 20px; bottom: calc(100% + 6px); margin: 0; padding: 8px 12px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); font-size: var(--fs-xs); font-weight: 700; box-shadow: 0 6px 18px rgba(15,23,42,.14); }
 [data-theme="dark"] .modal-foot { background: rgba(255,255,255,.04); }
 .modal-note { font-size: .84rem; color: var(--ink-secondary); line-height: 1.6; }
 .form-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
@@ -928,14 +930,16 @@ textarea#mentor-notes:focus { outline: 2px solid var(--coral-end); }
 .toast {
   display: flex; align-items: center; gap: 8px; max-width: 440px; width: max-content;
   background: linear-gradient(155deg, rgba(255,255,255,.92), rgba(241,245,249,.88)); color: var(--ink-primary);
-  border: 1px solid rgba(255,255,255,.90); border-radius: 999px; padding: 10px 16px;
+  border: 1px solid rgba(255,255,255,.90); border-radius: 999px; padding: 8px 16px; min-height: 44px;
   backdrop-filter: var(--blur); box-shadow: 0 10px 26px rgba(30,41,59,.16), inset 0 1px 1px #fff;
-  font-size: .78rem; font-weight: 700; opacity: 0; transform: translateY(10px);
+  font-size: .78rem; font-weight: 700; font-family: inherit; text-align: left;
+  opacity: 0; transform: translateY(10px); pointer-events: auto; cursor: pointer;
   transition: opacity .22s ease, transform .22s ease;
 }
+.toast:focus-visible { outline: 2px solid var(--coral-end); outline-offset: 2px; }
 [data-theme="dark"] .toast { background: rgba(26,33,47,.94); border-color: rgba(255,255,255,.20); }
 .toast.is-visible { opacity: 1; transform: none; }
-.toast-success .icon { color: #047857; }
+.toast-success .icon { color: var(--ok); }
 .toast-error .icon { color: var(--danger); }
 .toast-info .icon { color: var(--primary-strong); }
 
@@ -1126,7 +1130,7 @@ html.theme-switching .day-chip, html.theme-switching .activity-item, html.theme-
   .fruit-summary { flex-direction: row; align-items: center; text-align: left; }
   .fruit-summary .ring, .fruit-summary .ring-multi { flex: none; }
   .shop-row { grid-template-columns: 26px minmax(120px,1fr) 90px 100px 60px; }
-  .task-card-tools { grid-template-columns: repeat(2, 34px); }
+  .task-card-tools { grid-template-columns: repeat(2, 44px); gap: 8px; }
 }
 
 /* Bento dan hero butuh ruang sebelum berubah kolom; mencegah teks saling menghimpit. */

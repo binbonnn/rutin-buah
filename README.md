@@ -31,7 +31,7 @@ Perintah terpisah: `npm test` (regresi `node:test`, harness `vm`, tanpa browser)
 
 1. Buka aplikasi di Chrome/Edge Android atau desktop melalui `localhost`/HTTPS.
 2. Pilih **Install app / Add to Home screen** dari menu browser (atau tombol unduh di header saat tersedia).
-3. Aplikasi dapat dibuka tanpa koneksi setelah berhasil dimuat pertama kali. Manifest memakai `id` absolut, `display_override`, orientasi `any`, ikon `any`/`maskable`/`monochrome`, serta tangkapan layar untuk instalasi di desktop.
+3. Aplikasi dapat dibuka tanpa koneksi setelah berhasil dimuat pertama kali. Manifest memakai `id` relatif (`./`) agar tidak bentrok dengan PWA lain pada origin GitHub Pages, `display_override`, orientasi `any`, ikon `any`/`maskable`/`monochrome`, serta tangkapan layar untuk instalasi di desktop.
 
 ## Fitur utama
 
@@ -57,7 +57,7 @@ Navigasi harian memakai **bottom tab bar** pada layar < 1024 px; Pengaturan teta
 - **Evaluasi Mingguan** — pratinjau dibuat Minggu 21.00 dan snapshot final Senin 09.00. Laporan tidak dibuat untuk minggu sebelum aplikasi dipakai, dan pratinjau tidak menghitung aktivitas yang belum tiba jamnya. Disimpan maksimal 4 minggu/8 laporan final; yang kedaluwarsa belum dibuka tetap tampil sekali, paling lambat 14 hari. Jadwal lama dibekukan per hari (`daySnapshots`) agar laporan catch-up tidak berubah saat jadwal diedit. Riwayat centang tidak ikut dihapus. Insight dihitung dari pola (modul murni `js/insights.js`) dan teksnya dirender saat tampil, bukan disimpan. Rencana pemulihan memakai `js/planner.js`: menerima usulan menambah satu aktivitas sekali jadi pada tanggal/jam yang ditampilkan, dengan pengecekan tabrakan ulang, undo, dan penanganan pola kronis. Unduh Markdown (`.md`) tersedia per laporan atau sekaligus; format JSON importable tidak disediakan.
 - **Notifikasi** — pengingat dalam-aplikasi memakai jendela waktu 10 menit dan tetap tampil saat tab dibuka/difokuskan walaupun izin browser belum diberikan. Ekspor **kalender `.ics` dengan `VALARM`** mencakup jadwal, belanja, dan dua pengingat evaluasi (Minggu 21.00 serta Senin 09.00) agar tetap berjalan saat aplikasi tertutup. Web Push sungguhan belum tersedia (lihat Batasan).
 - **Ekspor** — JSON (cadangan penuh, termasuk arsip IndexedDB), Markdown (ringkasan & laporan evaluasi), dan ICS (kalender). Unduhan memakai Blob URL dan tetap berjalan di bawah CSP.
-- **Keamanan** — CSP, `Referrer-Policy`, `X-Content-Type-Options`, dan `Permissions-Policy` dikirim lewat header server serta meta HTML. Semua teks pengguna di-escape sebelum `innerHTML`. Server menolak URL rusak, traversal, dan berkas internal; aset yang hilang dibalas 404.
+- **Keamanan** — CSP, `Referrer-Policy`, dan `X-Content-Type-Options` berlaku baik lewat meta HTML maupun header `node scripts/serve.js`; `Permissions-Policy` dan `Cache-Control` hanya dikirim server lokal (GitHub Pages tidak mengirim header kustom). Semua teks pengguna di-escape sebelum `innerHTML`. Server lokal menolak URL rusak, traversal, dan berkas internal; aset yang hilang dibalas 404.
 - **Font** — memakai font sistem (`system-ui`/Inter fallback). Google Fonts dihapus agar aplikasi benar-benar bekerja offline dan tidak mengirim permintaan ke pihak ketiga.
 - **Urutan olahraga sebelum mandi** dan blok lembur Jumat s.d. 21.00 mengikuti template PRD.
 
@@ -86,7 +86,7 @@ js/ui.js                  modal, toast, field, badge, progress ring
 js/pages.js               tujuh halaman & semua aksi (termasuk ekspor ICS)
 js/app.js                 router, drawer, tab bar, notifikasi, registrasi SW
 tests/                    tes regresi Node (node:test + harness vm)
-.github/workflows/test.yml  CI: syntax check, validasi manifest, npm test
+.github/workflows/test.yml  CI: syntax check, validasi manifest, ESLint, regresi, dan E2E
 icons/                    ikon PWA 180/192/512, maskable, monochrome SVG
 screenshots/              tangkapan layar narrow/wide untuk manifest
 scripts/serve.js          server statis + header keamanan

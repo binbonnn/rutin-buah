@@ -22,14 +22,18 @@ jobs:
             node --check "$f"
           done
 
-      - name: Validasi JSON/manifest
+      - name: Validasi JSON/manifest dan versi
         run: |
           node -e "
             const fs = require('node:fs');
-            for (const f of ['package.json', 'manifest.webmanifest']) {
+            for (const f of ['package.json', 'package-lock.json', 'manifest.webmanifest']) {
               JSON.parse(fs.readFileSync(f, 'utf8'));
               console.log(f + ': valid');
             }
+            const pkg = require('./package.json');
+            const lock = require('./package-lock.json');
+            if (pkg.version !== lock.version) throw Error(pkg.version + ' != ' + lock.version);
+            console.log('versi package/lock: ' + pkg.version);
           "
 
       - name: Pasang dependency pengujian

@@ -12,7 +12,7 @@ const Archive = (() => {
   function open() {
     if (!available()) return Promise.resolve(null);
     if (dbPromise) return dbPromise;
-    dbPromise = new Promise((resolve) => {
+    const pending = new Promise((resolve) => {
       let req;
       try {
         req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -33,6 +33,11 @@ const Archive = (() => {
       };
       req.onerror = () => resolve(null);
       req.onblocked = () => resolve(null);
+    });
+    // Kegagalan sementara tidak di-cache: pemanggilan berikutnya boleh mencoba lagi.
+    dbPromise = pending.then((db) => {
+      if (!db) dbPromise = null;
+      return db;
     });
     return dbPromise;
   }

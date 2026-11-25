@@ -182,7 +182,16 @@
     }).join('');
   }
 
+  const isDrawer = () => typeof matchMedia === 'function' && matchMedia('(max-width: 1023px)').matches;
+
   function setSidebar(open) {
+    // Desktop memakai rail permanen: jangan pernah menandainya aria-hidden/inert.
+    if (!isDrawer()) {
+      document.body.classList.remove('sidebar-open');
+      ['main', 'topbar', 'tabbar'].forEach((id) => document.getElementById(id)?.removeAttribute('inert'));
+      document.querySelector('.sidebar')?.removeAttribute('aria-hidden');
+      return;
+    }
     const wasOpen = document.body.classList.contains('sidebar-open');
     const focusInside = document.querySelector('.sidebar')?.contains(document.activeElement);
     document.body.classList.toggle('sidebar-open', open);
@@ -325,7 +334,9 @@
           s.settings.thesisTopic = String(data.get('onboardTopic') || '').trim();
           s.settings.onboarded = true;
           if (data.get('onboardClearSamples')) s.inventory = s.inventory.filter((i) => !i.isSample);
-          s.activities = Seed.buildActivities(s.settings);
+          // Jangan menimpa aktivitas buatan pengguna (mis. hasil impor lawas).
+          const hasUserData = (s.activities || []).some((a) => !a.isTemplate || a.userEdited);
+          if (!hasUserData) s.activities = Seed.buildActivities(s.settings);
         });
         UI.toast('Pengaturan awal tersimpan.');
         render(true);
@@ -334,6 +345,14 @@
   }
 
   function bindEvents() {
+    // Skip link tidak boleh mengubah hash menjadi #app (router akan ke Beranda).
+    document.querySelector('.skip-link')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      const app = document.getElementById('app');
+      app?.focus({ preventScroll: true });
+      app?.scrollIntoView({ block: 'start' });
+    });
+    window.addEventListener('resize', () => { if (!isDrawer()) setSidebar(false); });
     document.addEventListener('click', (e) => {
       const nav = e.target.closest('[data-nav]');
       if (nav) {
@@ -383,17 +402,7 @@
           Store.saveMentorNotes(el.value);
         }, 400);
       }
-      // F-01: pratinjau pengurangan stok di modal konsumsi.
-      if (el.name === 'servingCount' || el.name === 'stockId') {
-        const preview = document.getElementById('stock-use-preview');
-        if (preview) {
-          const form = el.closest('form');
-          const stock = Store.state.inventory.find((i) => i.id === form?.elements.stockId?.value);
-          preview.textContent = stock
-            ? `Stok akan berkurang ${Store.stockUseLabel(stock, form.elements.servingCount.value || 1)}.`
-            : 'Pilih stok untuk melihat pratinjau.';
-        }
-      }
+      // F-01: pratinjau stok ditangani onOpen modal (field inventoryId).
     });
 
     const rawMoney = (v) => Number(String(v ?? '').replace(/\./g, '').replace(/[^\d]/g, '')) || 0;
@@ -493,29 +502,33 @@
     const permission = 'Notification' in window && Notification.permission === 'granted';
     if (!permission) {
       // N-03: tetap beri pengingat dalam aplikasi bila izin browser tidak ada.
-      if (inAppText) UI.toast(inAppText, 'info');
+      if (inAppText || body) UI.toast(inAppText || body, 'info');
       return;
     }
     const options = { body, tag, icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', data: { url } };
-    let sent = false;
-    if (navigator.serviceWorker && navigator.serviceWorker.ready) {
-      Promise.race([
-        navigator.serviceWorker.ready,
-        new Promise((resolve) => setTimeout(() => resolve(null), 1200))
-      ]).then((reg) => {
-        sent = !!(reg && reg.showNotification);
-        if (sent) reg.showNotification(title, options).catch(() => new Notification(title, options));
-        else new Notification(title, options);
-      }).catch(() => { try { new Notification(title, options); } catch { /* abbaikan */ } });
-    }
+    const fallback = () => {
+      try {
+        if (typeof Notification === 'function') { new Notification(title, options); return; }
+      } catch { /* abbaikan */ }
+      if (inAppText || body) UI.toast(inAppText || body, 'info');
+    };
+    if (!navigator.serviceWorker || !navigator.serviceWorker.ready) { fallback(); return; }
+    Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise((resolve) => setTimeout(() => resolve(null), 1200))
+    ]).then((reg) => {
+      if (!reg || typeof reg.showNotification !== 'function') { fallback(); return; }
+      Promise.resolve(reg.showNotification(title, options)).catch(fallback);
+    }).catch(fallback);
   }
 
   function markNotified(key) {
-    const map = Store.state.notified;
-    if (map[key]) return false;
-    map[key] = true;
-    Store.persistSoon();
-    return true;
+    if (Store.state.notified[key]) return false;
+    return Store.update((s) => {
+      if (s.notified[key]) return false;
+      s.notified[key] = true;
+      return true;
+    }, true);
   }
 
   function checkNotifications() {
@@ -577,7 +590,10 @@
 
     if (n.lowStock && Store.consumeSoonInventory().length && Utils.withinWindow(wake, current, 720)) {
       const k = `${key}:lowstock`;
-      if (markNotified(k)) notify('Buah perlu segera dikonsumsi', Store.consumeSoonInventory().map((i) => i.name).join(', '), k, './index.html#/buah');
+      if (markNotified(k)) {
+        const names = Store.consumeSoonInventory().map((i) => i.name).join(', ');
+        notify('Buah perlu segera dikonsumsi', names, k, './index.html#/buah', 'Buah perlu segera dikonsumsi: ' + names);
+      }
     }
 
     if (n.bedtime) {
@@ -624,8 +640,9 @@
             UI.confirm('Versi baru tersedia', 'Muat ulang aplikasi untuk memakai versi terbaru?', 'Muat ulang')
               .then((ok) => {
                 if (!ok) return;
-                installing.postMessage({ type: 'SKIP_WAITING' });
+                // Pasang dulu: worker baru bisa mengambil kontrol segera setelah SKIP_WAITING.
                 navigator.serviceWorker.addEventListener('controllerchange', () => location.reload(), { once: true });
+                installing.postMessage({ type: 'SKIP_WAITING' });
               });
           });
         });

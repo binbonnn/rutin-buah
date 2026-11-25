@@ -24,20 +24,28 @@ const SHELL = [
   './icons/icon-monochrome.svg'
 ];
 
+/** Pre-cache atomik dengan HTTP cache di-bypass, sehingga aset baru tidak stale. */
+async function precache() {
+  const cache = await caches.open(CACHE);
+  await Promise.all(SHELL.map(async (path) => {
+    const url = new URL(path, self.registration.scope).href;
+    const res = await fetch(url, { cache: 'reload' });
+    if (!res || !res.ok) throw new Error(`Gagal memuat ${path}: ${res && res.status}`);
+    await cache.put(url, res);
+  }));
+}
+
 self.addEventListener('install', (event) => {
-  // Pre-cache atomik: bila satu berkas gagal, install gagal dan cache lama
-  // tetap dipakai (tidak ada campuran versi skrip).
-  event.waitUntil(
-    caches.open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
-  );
+  // worker baru menunggu (tanpa skipWaiting) sampai pengguna menyetujui muat ulang.
+  event.waitUntil(precache());
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys
+        .filter((k) => k.startsWith('rutin-buah-') && k !== CACHE)
+        .map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -48,21 +56,26 @@ self.addEventListener('fetch', (event) => {
   let url;
   try { url = new URL(req.url); } catch { return; }
   if (url.origin !== self.location.origin) return;
+  // Jangan menyusup ke PWA lain pada origin bersama (mis. GitHub Pages).
+  if (!url.pathname.startsWith(new URL(self.registration.scope).pathname)) return;
 
   // S-01: navigasi network-first ber-timeout. Respons error tidak pernah
   // menimpa shell yang baik, dan lie-fi tidak menggantung pembukaan app.
   if (req.mode === 'navigate') {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
+      const fallback = async () => (await cache.match('./index.html')) || Response.error();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), NAV_TIMEOUT);
       try {
-        const res = await Promise.race([
-          fetch(req),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), NAV_TIMEOUT))
-        ]);
-        if (res && res.ok) cache.put('./index.html', res.clone());
+        const res = await fetch(req, { signal: controller.signal });
+        clearTimeout(timer);
+        if (!res || !res.ok) return fallback();
+        await cache.put('./index.html', res.clone());
         return res;
       } catch {
-        return (await cache.match('./index.html')) || Response.error();
+        clearTimeout(timer);
+        return fallback();
       }
     })());
     return;
@@ -96,8 +109,10 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const same = wins.find((c) => {
-      try { return new URL(c.url).pathname === target.pathname; }
-      catch { return false; }
+      try {
+        const cur = new URL(c.url);
+        return cur.origin === target.origin && cur.pathname === target.pathname;
+      } catch { return false; }
     });
     if (same) {
       await same.focus();

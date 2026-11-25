@@ -135,7 +135,7 @@ test('retensi 4 laporan, batas keras 8, dan buang kedaluwarsa lama', async ({ pa
       '2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16'];
     s.firstUseAt = '2026-09-01T00:00:00.000Z';
     s.weeklyReviews = Object.fromEntries(weeks.map((k) => [k, {
-      weekKey: k, status: 'final', isoWeek: '2026-W00',
+      weekKey: k, status: 'final', isoWeek: Utils.isoWeekKey(Utils.fromKey(k)),
       generatedAt: '2026-11-01T00:00:00.000Z', expiresAt: '2026-12-31T00:00:00.000Z',
       seen: false, items: [], waiting: [], skippedItems: [], daily: [],
       insights: [], plan: [], score: 0, done: 0, total: 1
@@ -146,19 +146,22 @@ test('retensi 4 laporan, batas keras 8, dan buang kedaluwarsa lama', async ({ pa
   expect(after.list.length).toBeLessThanOrEqual(4);
   expect(after.keys.length).toBeLessThanOrEqual(8);
 
+  // Uji aturan 14 hari secara murni: hanya satu laporan kedaluwarsa, total < 8,
+  // supaya yang terhapus bukan akibat batas keras delapan laporan.
   await seedState(page, (s) => {
-    const valid = [0, 1, 2, 3].map((n) => `2026-11-${String(2 + n * 7).padStart(2, '0')}`);
-    const held = ['2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02'];
-    s.weeklyReviews = Object.fromEntries([...valid, ...held, '2026-09-21'].map((k) => [k, {
-      weekKey: k, status: 'final', isoWeek: '2026-W00',
+    const valid = ['2026-11-02', '2026-11-09', '2026-11-16', '2026-11-23'];
+    const held = ['2026-10-05']; // expiresAt + 14 hari sudah lewat pada 23 Nov
+    s.weeklyReviews = Object.fromEntries([...valid, ...held].map((k) => [k, {
+      weekKey: k, status: 'final', isoWeek: Utils.isoWeekKey(Utils.fromKey(k)),
       generatedAt: '2026-10-01T00:00:00.000Z',
-      expiresAt: held.includes(k) || k === '2026-09-21' ? '2026-11-20T00:00:00.000Z' : '2026-12-31T00:00:00.000Z',
+      expiresAt: held.includes(k) ? '2026-11-01T00:00:00.000Z' : '2026-12-31T00:00:00.000Z',
       seen: false, items: [], waiting: [], skippedItems: [], daily: [],
       insights: [], plan: [], score: 0, done: 0, total: 1
     }]));
   });
   await page.evaluate(() => Store.ensureReviews());
   const capped = await reviews(page);
-  expect(capped.keys).not.toContain('2026-09-21'); // kedaluwarsa > 14 hari
+  expect(capped.keys).not.toContain('2026-10-05'); // lewat batas 14 hari
+  expect(capped.keys).toContain('2026-11-02'); // masih empat laporan valid
   expect(capped.keys.length).toBeLessThanOrEqual(8);
 });

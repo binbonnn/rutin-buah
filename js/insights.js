@@ -3,7 +3,6 @@ const Insights = (() => {
   const BLOCKS = ['pagi', 'siang', 'sore', 'malam'];
   const CORE = ['Ibadah', 'Skripsi'];
   const MIN_TOTAL = 20;
-  const WEEK_MS = 7 * 86400000;
 
   const num = (v, fb = 0) => {
     const n = Number(v);
@@ -24,10 +23,13 @@ const Insights = (() => {
     if (num(review.total) < MIN_TOTAL) return true;
     const first = Date.parse(firstUseAt);
     if (!Number.isFinite(first)) return false;
-    const start = Date.parse((review.weekKey || '') + 'T00:00:00Z');
     const reference = now instanceof Date ? now.getTime() : Date.parse(now);
     if (!Number.isFinite(reference)) return false;
-    return (Number.isFinite(start) ? start : reference) < first + WEEK_MS;
+    // Bandingkan tanggal lokal (bukan UTC): cukup minggu yang memuat
+    // firstUseAt yang dianggap minggu pertama, tanpa jeda +7 jam.
+    const wk = typeof review.weekKey === 'string' ? review.weekKey : '';
+    const firstDay = Utils.dateKey(new Date(first));
+    return !wk || wk <= firstDay;
   }
 
   function isMissed(it) {

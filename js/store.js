@@ -8,6 +8,11 @@ const Store = (() => {
   const arr = (v, fb) => (Array.isArray(v) ? v : fb);
   const obj = (v, fb) => (v && typeof v === 'object' && !Array.isArray(v) ? v : fb);
   const str = (v, fb = '') => (typeof v === 'string' ? v : fb);
+  /** Kontrak skema memakai HH.mm; terima juga HH:mm dari input/state lawas. */
+  const normTime = (v, fb = '') => {
+    const m = parseTime(v);
+    return m == null ? fb : Utils.fmtTime(m);
+  };
 
   // C.10 / D.8: konstanta tunggal untuk Jendela Aktif dan retensi laporan.
   const MIN_WINDOW_MIN = 10;
@@ -142,8 +147,8 @@ const Store = (() => {
   function compactTitles(raw) {
     const out = {};
     Object.entries(obj(raw, {})).forEach(([id, value]) => {
-      if (Array.isArray(value)) out[id] = [str(value[0]) || 'Aktivitas', str(value[1]), str(value[2]) || 'Pribadi'];
-      else if (obj(value, null)) out[id] = [str(value.title) || 'Aktivitas', str(value.time || value.startTime), str(value.category) || 'Pribadi'];
+      if (Array.isArray(value)) out[id] = [str(value[0]) || 'Aktivitas', normTime(value[1], str(value[1])), str(value[2]) || 'Pribadi'];
+      else if (obj(value, null)) out[id] = [str(value.title) || 'Aktivitas', normTime(value.time || value.startTime, str(value.time || value.startTime)), str(value.category) || 'Pribadi'];
     });
     return out;
   }
@@ -169,10 +174,11 @@ const Store = (() => {
         durationMin: Math.max(5, number(p.durationMin, 20)),
         status: ['proposed', 'accepted', 'skipped'].includes(status) ? status : 'proposed',
         suggested: suggested && /^\d{4}-\d{2}-\d{2}$/.test(str(suggested.date))
-          ? { date: str(suggested.date), start: str(suggested.start), end: str(suggested.end) } : null,
+          ? { date: str(suggested.date), start: normTime(suggested.start, str(suggested.start)), end: normTime(suggested.end, str(suggested.end)) } : null,
         createdActivityId: str(p.createdActivityId) || null,
         kind: p.kind === 'chronic' ? 'chronic' : 'recover',
         ...(p.reason ? { reason: str(p.reason) } : {}),
+        ...(p.decision ? { decision: str(p.decision) } : {}),
         ...(!suggested && p.action ? { action: str(p.action) } : {})
       };
     });
@@ -190,23 +196,52 @@ const Store = (() => {
 
   function normalizeReviews(raw) {
     const out = {};
+    const nonNeg = (v, fb = 0) => Math.max(0, number(v, fb));
     Object.entries(obj(raw, {})).forEach(([key, review]) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !obj(review, null)) return;
-      const generatedAt = str(review.generatedAt) || new Date(0).toISOString();
-      const expiresAt = str(review.expiresAt) || new Date(Date.parse(generatedAt) + REVIEW_TTL_DAYS * 86400000).toISOString();
+      const genMs = Date.parse(str(review.generatedAt));
+      const generatedAt = Number.isFinite(genMs) ? new Date(genMs).toISOString() : new Date(0).toISOString();
+      const expMs = Date.parse(str(review.expiresAt));
+      const expiresAt = Number.isFinite(expMs) ? new Date(expMs).toISOString()
+        : new Date(Date.parse(generatedAt) + REVIEW_TTL_DAYS * 86400000).toISOString();
       const titles = compactTitles(review.titles);
+      const items = compactItems(review.items, titles);
+      const rows = (value) => arr(value, []).filter((i) => obj(i, null))
+        .map((i) => ({ ...i, date: str(i.date || i.d), title: str(i.title) || 'Aktivitas' }))
+        .filter((i) => i.date);
+      const skippedItems = rows(review.skippedItems);
+      const waiting = rows(review.waiting);
+      const daily = arr(review.daily, []).filter((d) => obj(d, null)).map((d, n) => {
+        const done = nonNeg(d.done);
+        const total = nonNeg(d.total);
+        const pct = Utils.clamp(nonNeg(d.pct, total ? Math.round((done / total) * 100) : 0), 0, 100);
+        return { ...d, key: str(d.key), label: str(d.label) || `Hari ${n + 1}`, done, total, pct };
+      });
+      const done = nonNeg(review.done);
+      const total = Math.max(done, nonNeg(review.total, items.length));
       out[key] = {
         ...review,
         weekKey: key,
+        isoWeek: str(review.isoWeek) || Utils.isoWeekKey(Utils.fromKey(key)),
+        ruleVersion: number(review.ruleVersion, REVIEW_RULE_VERSION),
         generatedAt,
         expiresAt,
         seen: !!review.seen,
         downloadedAt: str(review.downloadedAt) || null,
         downloadedFormat: str(review.downloadedFormat) || null,
         status: review.status === 'preview' ? 'preview' : 'final',
-        items: compactItems(review.items, titles),
+        score: Utils.clamp(nonNeg(review.score, total ? Math.round((done / total) * 100) : 0), 0, 100),
+        done,
+        total,
+        unfinished: Math.max(0, nonNeg(review.unfinished, Math.max(0, items.length - done))),
+        skippedCount: nonNeg(review.skippedCount, skippedItems.length),
+        excusedCount: nonNeg(review.excusedCount),
+        waitingCount: nonNeg(review.waitingCount, waiting.length),
+        items,
         titles,
-        waiting: arr(review.waiting, []),
+        skippedItems,
+        waiting,
+        daily,
         insights: compactInsights(review.insights),
         plan: compactPlan(review.plan, key)
       };
@@ -241,8 +276,10 @@ const Store = (() => {
     return Object.fromEntries(Object.entries(map).filter(([k]) => str(k).slice(0, 10) >= cutoff));
   }
 
-  function migrate(s) {
-    const version = number(s.version, 1);
+  function migrate(s, sourceVersion) {
+    //Versi sumber harus dibaca sebelum mergeDefaults(base, src), karena base
+    //sudah memakai SCHEMA_VERSION dan akan menyembunyikan state lawas.
+    const version = Number.isFinite(sourceVersion) ? sourceVersion : number(s.version, 1);
     if (version < 2) {
       // D-02: item belanja dari minggu berbeda pernah memakai ID template yang sama.
       const seen = new Set();
@@ -313,7 +350,11 @@ const Store = (() => {
     s.customTargets = obj(src.customTargets, {});
     s.activities = dedupeActivities(arr(src.activities, base.activities)
       .filter((a) => a && a.id && a.title && number(a.dayOfWeek) >= 1 && number(a.dayOfWeek) <= 7)
-      .map((a) => ({ ...a, isRecurring: a.isRecurring !== false })));
+      .map((a) => ({
+        ...a, isRecurring: a.isRecurring !== false,
+        startTime: normTime(a.startTime, str(a.startTime)),
+        endTime: normTime(a.endTime, str(a.endTime))
+      })));
     if (!s.activities.length) s.activities = base.activities;
     s.tasks = arr(src.tasks, base.tasks).filter((t) => t && t.id && t.title);
     if (!s.tasks.length && Array.isArray(src.tasks)) s.tasks = [];
@@ -337,12 +378,14 @@ const Store = (() => {
     s.scheduleVersion = number(src.scheduleVersion, 1);
     s.chronicDismissedUntil = obj(src.chronicDismissedUntil, {});
     const settings = s.settings;
-    settings.planWindowStart = str(settings.planWindowStart) || '05.00';
-    settings.planWindowEnd = str(settings.planWindowEnd) || '21.30';
+    settings.planWindowStart = normTime(settings.planWindowStart, '05.00');
+    settings.planWindowEnd = normTime(settings.planWindowEnd, '21.30');
+    settings.wakeUpTime = normTime(settings.wakeUpTime, str(settings.wakeUpTime) || '04.00');
+    settings.bedtime = normTime(settings.bedtime, str(settings.bedtime) || '21.00');
     settings.recoveryMaxPerDay = Utils.clamp(number(settings.recoveryMaxPerDay, 60), 0, 240);
     if (!Array.isArray(settings.coreCategories)) settings.coreCategories = ['Ibadah', 'Skripsi'];
     delete s.dayPlans;
-    return migrate(s);
+    return migrate(s, number(src.version, 1));
   }
 
   /** B.0.5: simpan raw sebelum migrasi; satu slot terbaru saja. */
@@ -487,6 +530,9 @@ const Store = (() => {
   function importData(json) {
     const parsed = describeImport(json);
     const next = parsed.state;
+    // Sama seperti update(): jangan mengarsipkan state in-memory yang stale.
+    if (persistTimer) flush();
+    reloadFromStorage();
     try { localStorage.setItem(BACKUP_KEY, JSON.stringify(state)); } catch (err) { console.warn('Cadangan impor gagal dibuat.', err); }
     state = ensureWeekShopping(next);
     persist();
@@ -529,6 +575,12 @@ const Store = (() => {
     const parsed = typeof json === 'string' ? JSON.parse(json) : json;
     const archive = obj(parsed && parsed.archive, {});
     if (typeof Archive === 'undefined' || !Archive.available || !Archive.available()) return;
+    // Timpa seluruh arsip: entri dari state yang diganti tidak boleh ikut ter-ekspor.
+    const cleared = await Promise.all([
+      Archive.clear('completion-old'),
+      Archive.clear('consumption-old')
+    ]);
+    if (!cleared.every(Boolean)) console.warn('Sebagian arsip lama gagal dibersihkan saat impor.');
     for (const [key, value] of Object.entries(obj(archive.completion, {}))) {
       await Archive.put('completion-old', key, value);
     }
@@ -757,7 +809,8 @@ const Store = (() => {
         const prev = normRecord(day[a.id]);
         // V3-02: hari istirahat tidak boleh menimpa catatan yang sudah ada.
         if (on) {
-          if (prev && ['completed', 'inprogress', 'skipped'].includes(prev.s)) return;
+          if (prev && (['completed', 'inprogress', 'skipped'].includes(prev.s)
+            || (prev.s === 'excused' && prev.src !== 'rest'))) return;
           day[a.id] = { s: 'excused', startedAt: null, at: now.toISOString(), src: 'rest' };
         } else if (prev && prev.s === 'excused' && prev.src === 'rest') {
           delete day[a.id];
@@ -1037,9 +1090,26 @@ const Store = (() => {
 
   const PLAN_NO_SLOT = 'Tidak ada celah minggu depan; pertimbangkan mengurangi aktivitas lain';
 
-  function findPlanSlot(target, opts, now) {
+  function findPlanSlot(target, opts, now = new Date()) {
     if (typeof Planner === 'undefined' || typeof Planner.findSlot !== 'function') return null;
     return Planner.findSlot({ ...opts, now }, target, activitiesForDayIn);
+  }
+
+  /** Menit pemulihan aktif pada suatu tanggal (tanpa aktivitas yang diganti). */
+  function recoveryMinutes(s, date, ignoreId = null) {
+    if (typeof Planner === 'undefined' || typeof Planner.activeOn !== 'function') return 0;
+    return Planner.activeOn(s, date)
+      .filter((a) => a && a.origin === 'recovery' && a.id !== ignoreId)
+      .reduce((sum, a) => {
+        const end = parseTime(a.endTime);
+        const start = parseTime(a.startTime);
+        return sum + (end != null && start != null && end > start ? end - start : 0);
+      }, 0);
+  }
+
+  function quotaFits(s, date, duration, ignoreId = null) {
+    const cap = Utils.clamp(number(s.settings && s.settings.recoveryMaxPerDay, 60), 0, 240);
+    return recoveryMinutes(s, str(date), ignoreId) + Math.max(0, number(duration, 0)) <= cap;
   }
 
   function planWhen(suggested) {
@@ -1087,6 +1157,7 @@ const Store = (() => {
   /** S1: kronis hanya diambil dari tiga laporan final terakhir sebelum minggu ini. */
   function chronicFor(target, weekStartKey, items, titles) {
     const dismissed = obj(target.chronicDismissedUntil, {});
+    const deleted = arr(target.deletedTemplateIds, []).map((v) => str(v));
     const finals = Object.values(obj(target.weeklyReviews, {}))
       .filter((r) => r && r.status === 'final' && str(r.weekKey) < weekStartKey)
       .sort((a, b) => str(b.weekKey).localeCompare(str(a.weekKey)))
@@ -1104,7 +1175,7 @@ const Store = (() => {
     });
     for (const [key, total] of count) {
       if (total < 1) continue;
-      if (Date.parse(str(dismissed[key])) > Date.now()) continue;
+      if (deleted.includes(key) || Date.parse(str(dismissed[key])) > Date.now()) continue;
       // `reviewItems` berisi aktivitas yang tidak tercatat; kronis berarti
       // pola itu muncul sebagai miss di ketiga laporan final sebelumnya.
       const missedEverywhere = finals.every((r) => reviewItems(r).some((row) => keyOf(row) === key));
@@ -1214,9 +1285,11 @@ const Store = (() => {
     });
     const plan = sources.slice(0, 5).map((i, n) => {
       const durationMin = Math.max(5, number(i.duration, 20));
+      // Usulan selalu dihitung dari hari ini agar laporan catch-up tidak
+      // menghasilkan aktivitas pemulihan di tanggal yang sudah lewat.
       const suggested = findPlanSlot(target, {
-        from: dateKey(now), durationMin, category: i.cat, preferTime: i.time
-      }, now);
+        from: dateKey(new Date()), durationMin, category: i.cat, preferTime: i.time
+      });
       return {
         id: `plan-${weekStartKey}-${n + 1}`, activityId: i.id, title: i.title, category: i.cat,
         durationMin, status: 'proposed', suggested, createdActivityId: null, kind: 'recover',
@@ -1226,8 +1299,8 @@ const Store = (() => {
     const chronic = chronicFor(target, weekStartKey, fullItems, titles);
     if (chronic) {
       const suggested = findPlanSlot(target, {
-        from: dateKey(now), durationMin: chronic.durationMin, category: chronic.category
-      }, now);
+        from: dateKey(new Date()), durationMin: chronic.durationMin, category: chronic.category
+      });
       plan.push({
         id: `plan-${weekStartKey}-chronic`, activityId: chronic.id, title: chronic.title,
         category: chronic.category, durationMin: chronic.durationMin, status: 'proposed',
@@ -1400,12 +1473,33 @@ const Store = (() => {
         } else outcome = { ok: false, reason: PLAN_NO_SLOT };
         return;
       }
+      // Laporan catch-up boleh berisi usulan lama; jangan pernah membuat
+      // aktivitas di tanggal yang sudah lewat tanpa konfirmasi jadwal baru.
+      if (str(wanted.date) < dateKey(new Date())) {
+        const fresh = recalc();
+        if (fresh) p.suggested = fresh;
+        outcome = {
+          ok: false, reason: 'Usulan sudah lewat. Konfirmasi jadwal baru?',
+          suggestion: fresh || null
+        };
+        return;
+      }
       if (typeof Planner !== 'undefined' && typeof Planner.isSlotFree === 'function'
         && !Planner.isSlotFree(s, wanted, p.createdActivityId, activitiesForDayIn)) {
         const fresh = recalc();
         if (fresh) p.suggested = fresh;
         outcome = {
           ok: false, reason: 'Slot sudah terpakai. Konfirmasi jadwal baru?',
+          suggestion: fresh || null
+        };
+        return;
+      }
+      const span = (parseTime(wanted.end) ?? 0) - (parseTime(wanted.start) ?? 0);
+      if (!quotaFits(s, str(wanted.date), span > 0 ? span : number(p.durationMin, 20))) {
+        const fresh = recalc();
+        if (fresh) p.suggested = fresh;
+        outcome = {
+          ok: false, reason: 'Kuota pemulihan harian penuh. Konfirmasi jadwal baru?',
           suggestion: fresh || null
         };
         return;
@@ -1434,7 +1528,13 @@ const Store = (() => {
       const r = s.weeklyReviews[weekStartKey];
       if (!r) return;
       const p = arr(r.plan, []).find((item) => item.id === planId);
-      if (!p || p.status !== 'accepted') { outcome = { ok: false, reason: 'Rencana belum diterima.' }; return; }
+      if (!p || !['accepted', 'skipped'].includes(p.status)) { outcome = { ok: false, reason: 'Rencana belum diputuskan.' }; return; }
+      if (p.status === 'skipped') {
+        p.status = 'proposed';
+        p.decision = null;
+        outcome = { ok: true, reason: '' };
+        return;
+      }
       const id = str(p.createdActivityId);
       const idx = s.activities.findIndex((a) => a.id === id);
       if (idx >= 0) {
@@ -1464,9 +1564,21 @@ const Store = (() => {
       if (!r) return;
       const p = arr(r.plan, []).find((item) => item.id === planId);
       if (!p) return;
+      if (p.status === 'accepted') {
+        outcome = { ok: false, reason: 'Rencana sudah diterima. Batalkan dulu untuk mengubah jam.' };
+        return;
+      }
+      if (str(wanted.date) < dateKey(new Date())) {
+        outcome = { ok: false, reason: 'Tanggal sudah lewat.' };
+        return;
+      }
       if (typeof Planner !== 'undefined' && typeof Planner.isSlotFree === 'function'
         && !Planner.isSlotFree(s, wanted, p.createdActivityId, activitiesForDayIn)) {
         outcome = { ok: false, reason: 'Jam itu bertabrakan dengan aktivitas lain.' };
+        return;
+      }
+      if (!quotaFits(s, str(wanted.date), parseTime(wanted.end) - parseTime(wanted.start), p.createdActivityId)) {
+        outcome = { ok: false, reason: 'Kuota pemulihan harian sudah penuh.' };
         return;
       }
       p.suggested = { date: str(wanted.date), start: str(wanted.start), end: str(wanted.end) };
@@ -1515,14 +1627,18 @@ const Store = (() => {
       if (choice === 'keep') {
         s.chronicDismissedUntil[p.activityId] = new Date(Date.now() + 28 * 86400000).toISOString();
         p.status = 'skipped';
+        p.decision = 'keep';
         outcome = { ok: true, reason: '', choice };
         return;
       }
       if (choice === 'delete') {
         const key = str(p.activityId);
         if (!arr(s.deletedTemplateIds, []).includes(key)) s.deletedTemplateIds.push(key);
+        // Tanpa penanda ini pola lama tetap muncul dari tiga laporan tersimpan.
+        s.chronicDismissedUntil[key] = new Date(Date.now() + 28 * 86400000).toISOString();
         s.activities = arr(s.activities, []).filter((a) => str(a.templateId || a.id) !== key);
         p.status = 'skipped';
+        p.decision = 'delete';
         outcome = { ok: true, reason: '', choice };
         return;
       }

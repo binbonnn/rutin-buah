@@ -150,7 +150,8 @@ const Planner = (() => {
       const used = activeOn(state, date)
         .filter((a) => a.origin === 'recovery')
         .reduce((sum, a) => sum + Math.max(0, spanOf(a) ? spanOf(a)[1] - spanOf(a)[0] : 0), 0);
-      if (used >= maxPerDay) continue;
+      // S1: sisa kuota harus cukup untuk seluruh durasi, bukan hanya > 0.
+      if (used + duration > maxPerDay) continue;
 
       const [winStart, winEnd] = windowFor(state, date);
       const nowMin = date === todayKey

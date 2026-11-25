@@ -9,7 +9,8 @@ const UI = (() => {
   function toast(message, type = 'success') {
     const root = document.getElementById('toast-root');
     if (!root) return;
-    const el = document.createElement('div');
+    const el = document.createElement('button');
+    el.type = 'button';
     el.className = 'toast toast-' + type;
     el.setAttribute('role', type === 'error' ? 'alert' : 'status');
     const iconName = type === 'error' ? 'alert' : type === 'info' ? 'info' : 'check';
@@ -39,6 +40,7 @@ const UI = (() => {
     submit.classList.remove('is-sending');
     submit.disabled = false;
     document.getElementById('modal-cancel').textContent = cancelLabel;
+    clearModalHint();
     d.className = 'modal' + (size ? ' modal-' + size : '');
     if (onOpen) onOpen(d);
     if (!d.open) d.showModal();
@@ -51,6 +53,34 @@ const UI = (() => {
     const d = dialog();
     if (d.open) d.close();
     else releaseModal();
+  }
+
+  /** Pesan di dalam dialog (toast global tertutup top layer saat modal aktif). */
+  function modalHint(message) {
+    const d = dialog();
+    let hint = d.querySelector('.modal-dirty-hint');
+    if (!hint) {
+      hint = document.createElement('p');
+      hint.className = 'modal-dirty-hint';
+      hint.setAttribute('role', 'status');
+      const foot = d.querySelector('.modal-foot');
+      if (foot) foot.prepend(hint);
+      else d.appendChild(hint);
+    }
+    hint.textContent = message;
+  }
+
+  function clearModalHint() {
+    dialog().querySelector('.modal-dirty-hint')?.remove();
+  }
+
+  /** Tutup lewat X/Batal/backdrop/Escape dengan perlindungan dirty yang sama. */
+  function requestCloseModal() {
+    if (modalState && modalState.dirty) {
+      modalHint('Perubahan belum disimpan. Pilih Simpan atau Batal.');
+      return;
+    }
+    closeModal();
   }
 
   function releaseModal() {
@@ -68,6 +98,7 @@ const UI = (() => {
     if (trigger && trigger.isConnected) trigger.focus();
     else document.getElementById('app')?.focus();
     d.removeAttribute('data-dirty');
+    clearModalHint();
   }
 
   function confirm(title, message, submitLabel = 'Ya, lanjutkan') {
@@ -171,7 +202,8 @@ const UI = (() => {
   function initModal() {
     const d = dialog();
     document.getElementById('modal-close').innerHTML = ic('close', 20);
-    document.getElementById('modal-cancel').addEventListener('click', () => closeModal());
+    document.getElementById('modal-close').addEventListener('click', requestCloseModal);
+    document.getElementById('modal-cancel').addEventListener('click', requestCloseModal);
     const submit = document.getElementById('modal-submit');
     submit.insertAdjacentHTML('beforeend', sendIcon());
     submit.addEventListener('click', () => {
@@ -200,11 +232,13 @@ const UI = (() => {
     });
     d.addEventListener('click', (e) => {
       if (e.target !== d) return;
+      requestCloseModal();
+    });
+    d.addEventListener('cancel', (e) => {
       if (modalState && modalState.dirty) {
-        toast('Perubahan belum disimpan. Pilih Simpan atau Batal.', 'info');
-        return;
+        e.preventDefault();
+        modalHint('Perubahan belum disimpan. Pilih Simpan atau Batal.');
       }
-      closeModal();
     });
     d.addEventListener('close', releaseModal);
   }
