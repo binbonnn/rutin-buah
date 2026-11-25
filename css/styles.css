@@ -61,6 +61,11 @@
     inset 0 -1px 2px rgba(15, 23, 42, .05);
   --nav-h: 0px;
 
+  /* ----- Skeleton loading ----- */
+  --sk-base: rgba(148,163,184,.28);
+  --sk-shine: rgba(255,255,255,.72);
+  --sk-surface: linear-gradient(180deg, rgba(248,250,252,.96), rgba(226,232,240,.94));
+
   /* ----- U-02/V-10: skala tipografi. 12 px adalah lantai mutlak. ----- */
   --fs-xs: .75rem;
   --fs-sm: .8125rem;
@@ -117,6 +122,9 @@
   /* V-11: koral digelapkan agar teks putih memenuhi AA (5,2 : 1). */
   --surface-solid: #141b29;
   --surface-solid-2: #1d2636;
+  --sk-base: rgba(148,163,184,.20);
+  --sk-shine: rgba(255,255,255,.16);
+  --sk-surface: linear-gradient(180deg, rgba(20,27,41,.96), rgba(15,21,33,.96));
   --coral-grad: linear-gradient(135deg, #c2410c, #9a3412);
   --on-coral: #ffffff;
   --c-thesis: #c7b7ff;
@@ -331,7 +339,46 @@ body.sidebar-open { overflow: hidden; }
    statis sehingga mengaburkan page-head & kepala kolom. z-index:1 memulihkan
    ketajaman tanpa mengubah tumpukan sidebar (z80) / backdrop (z70). */
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; z-index: 1; }
-.page { padding: 16px 14px 10px; outline: none; flex: 1; }
+.page { padding: 16px 14px 10px; outline: none; flex: 1; position: relative; }
+
+/* ---------- Skeleton loading ---------- */
+.sk {
+  position: absolute; inset: 0; z-index: 3; padding: 16px 14px 10px;
+  display: grid; align-content: start; gap: 14px; overflow: hidden;
+  background: var(--sk-surface); backdrop-filter: blur(10px);
+  border-radius: 18px; pointer-events: none;
+  opacity: 1; transition: opacity .25s ease, visibility .25s;
+}
+.sk.is-hidden { opacity: 0; visibility: hidden; }
+.sk-line, .sk-circle, .sk-chip { position: relative; display: block; overflow: hidden; background: var(--sk-base); border-radius: 10px; }
+.sk-line { height: 12px; width: 100%; }
+.sk-head { display: grid; gap: 8px; }
+.sk-xs { width: 34%; height: 9px; }
+.sk-lg { width: 56%; height: 22px; }
+.sk-sm { width: 72%; }
+.sk-short { width: 48%; }
+.sk-chip { width: 96px; height: 28px; border-radius: 999px; margin-top: 4px; }
+.sk-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.sk-card { display: grid; gap: 9px; padding: 16px; border: 1px solid var(--white-line-soft); border-radius: 18px; background: var(--panel-fill); }
+.sk-card .sk-title { width: 62%; height: 14px; }
+.sk-list { display: grid; gap: 10px; }
+.sk-item { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--white-line-soft); border-radius: 16px; background: var(--panel-fill); }
+.sk-circle { width: 36px; height: 36px; border-radius: 50%; flex: none; }
+.sk-lines { display: grid; gap: 6px; flex: 1; min-width: 0; }
+.sk-line::after, .sk-circle::after, .sk-chip::after {
+  content: ''; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--sk-shine), transparent);
+  animation: sk-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes sk-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .sk { transition: none; }
+  .sk-line::after, .sk-circle::after, .sk-chip::after { animation: none; }
+}
+@media (max-width: 600px) {
+  .sk { padding: 12px 10px 8px; }
+  .sk-cards { grid-template-columns: 1fr; }
+}
 .topbar {
   position: sticky; top: 0; z-index: 40;
   background: linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.14));

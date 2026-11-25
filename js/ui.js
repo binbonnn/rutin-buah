@@ -6,6 +6,21 @@ const UI = (() => {
   let themeTimer = null;
 
   /** F-04: timer milik masing-masing toast, bukan satu timer global. */
+  /** Skeleton: tampil saat konten/async dimuat, hilang dengan fade singkat. */
+  function setSkeleton(on) {
+    const el = document.getElementById('page-skeleton');
+    if (!el) return;
+    if (on) {
+      // Muncul tanpa transisi supaya langsung terlihat; render() yang memicu fade-out.
+      el.style.transition = 'none';
+      el.classList.remove('is-hidden');
+      void el.offsetWidth; // paksa reflow agar status visible terbaca browser.
+      el.style.transition = '';
+    } else {
+      el.classList.add('is-hidden');
+    }
+  }
+
   function toast(message, type = 'success') {
     const root = document.getElementById('toast-root');
     if (!root) return;
@@ -325,7 +340,7 @@ const UI = (() => {
 
   return {
     toast, openModal, closeModal, confirm, field, formGrid, badge, chip, ring, bar,
-    section, empty, pageHead, initModal, STATUS,
+    section, empty, pageHead, initModal, STATUS, setSkeleton,
     checkIcon, downloadIcon, sendIcon, themeIcon, searchIcon, lockIcon, themeTransition, animateDownload
   };
 })();

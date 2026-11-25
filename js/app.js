@@ -89,11 +89,15 @@
     // D-05/U-07: jangan timpa teks yang sedang diketik—termasuk harga aktual.
     if (!force && isEditingInApp()) return;
     const app = document.getElementById('app');
+    // Skeleton dipertahankan lintas render supaya animasi fade tidak terputus.
+    const skeleton = document.getElementById('page-skeleton');
     const prevFocus = document.activeElement;
     const shouldRestore = prevFocus && app.contains(prevFocus) && prevFocus.dataset.action === 'toggle-activity';
     try {
       const html = PAGES[current]();
       app.innerHTML = html;
+      if (skeleton) app.appendChild(skeleton);
+      UI.setSkeleton(false);
       safeMode = false;
     } catch (err) {
       safeScreen(err);
@@ -144,6 +148,7 @@
     current = key;
     const dateParam = query.get('date');
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) Pages.setViewDate(Utils.fromKey(dateParam));
+    if (changed && !initial) UI.setSkeleton(true);
     render(true);
     window.scrollTo({ top: 0, behavior: 'auto' }); // F-19: hapus deteksi fitur yang salah
 
@@ -299,10 +304,15 @@
         'Ya, impor data'
       );
       if (!ok) return;
-      await Store.importDataAsync(text);
-      applyTheme();
-      render(true);
-      UI.toast('Data berhasil diimpor. Cadangan lama tersedia di Pengaturan.');
+      UI.setSkeleton(true);
+      try {
+        await Store.importDataAsync(text);
+        applyTheme();
+        render(true);
+        UI.toast('Data berhasil diimpor. Cadangan lama tersedia di Pengaturan.');
+      } finally {
+        UI.setSkeleton(false);
+      }
     } catch (err) {
       UI.toast('Gagal mengimpor: ' + err.message, 'error');
     } finally {

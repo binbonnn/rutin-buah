@@ -95,7 +95,26 @@
         </div>
       </header>
 
-      <div id="app" class="page" tabindex="-1"></div>
+      <div id="app" class="page" tabindex="-1">
+        <!-- Skeleton konten: tampil sebelum render pertama dan saat data async disiapkan. -->
+        <div class="sk" id="page-skeleton" role="status" aria-label="Memuat konten">
+          <div class="sk-head">
+            <span class="sk-line sk-xs"></span>
+            <span class="sk-line sk-lg"></span>
+            <span class="sk-line sk-sm"></span>
+          </div>
+          <div class="sk-cards">
+            <div class="sk-card"><span class="sk-line sk-title"></span><span class="sk-line"></span><span class="sk-line sk-short"></span><span class="sk-line sk-chip"></span></div>
+            <div class="sk-card"><span class="sk-line sk-title"></span><span class="sk-line"></span><span class="sk-line sk-short"></span><span class="sk-line sk-chip"></span></div>
+            <div class="sk-card"><span class="sk-line sk-title"></span><span class="sk-line"></span><span class="sk-line sk-short"></span><span class="sk-line sk-chip"></span></div>
+          </div>
+          <div class="sk-list">
+            <div class="sk-item"><span class="sk-circle"></span><span class="sk-lines"><span class="sk-line"></span><span class="sk-line sk-short"></span></span></div>
+            <div class="sk-item"><span class="sk-circle"></span><span class="sk-lines"><span class="sk-line"></span><span class="sk-line sk-short"></span></span></div>
+            <div class="sk-item"><span class="sk-circle"></span><span class="sk-lines"><span class="sk-line"></span><span class="sk-line sk-short"></span></span></div>
+          </div>
+        </div>
+      </div>
 
       <footer class="app-footer">
         <span>Data tersimpan di perangkat ini.</span>

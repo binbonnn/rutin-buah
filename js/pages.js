@@ -1683,12 +1683,19 @@ const Pages = (() => {
       UI.toast(perm === 'granted' ? 'Notifikasi browser diaktifkan.' : 'Izin notifikasi belum diberikan. Pengingat tetap tampil di aplikasi.', perm === 'granted' ? 'success' : 'info');
     },
     async 'export-data'() {
-      Store.markBackup();
-      const json = await Store.exportDataAsync();
-      Utils.downloadFile('rutin-buah-cadangan.json', json, 'application/json');
-      const note = document.getElementById('last-backup-note');
-      if (note) note.textContent = 'Cadangan terakhir: hari ini.';
-      UI.toast('Data diekspor.');
+      UI.setSkeleton(true);
+      try {
+        Store.markBackup();
+        const json = await Store.exportDataAsync();
+        Utils.downloadFile('rutin-buah-cadangan.json', json, 'application/json');
+        const note = document.getElementById('last-backup-note');
+        if (note) note.textContent = 'Cadangan terakhir: hari ini.';
+        UI.toast('Data diekspor.');
+      } catch (err) {
+        UI.toast('Gagal mengekspor: ' + err.message, 'error');
+      } finally {
+        UI.setSkeleton(false);
+      }
     },
     'export-md'() { exportMarkdown(); },
     'export-ics'() { exportICS(); }, // N-01.2: pengingat kalender tanpa tab terbuka
