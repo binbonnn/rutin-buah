@@ -1,6 +1,6 @@
 # Skema State Lokal — `rutin-buah:v1`
 
-Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 5` (`APP_VERSION = 1.3.0`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
+Dokumen ini merangkum bentuk data yang disimpan di `localStorage` dengan kunci **`rutin-buah:v1`**. Aplikasi memakai `SCHEMA_VERSION = 5` (`APP_VERSION = 1.3.1`). State dibaca lewat `Store.normalizeState()` dan dimigrasi otomatis oleh `Store.migrate()`; jangan mengedit kunci ini langsung kecuali untuk pengujian.
 
 ## Bentuk umum
 
@@ -176,7 +176,7 @@ Item `kind:'chronic'` muncul bila kunci `templateId` atau judul tidak tercatat p
 
 ```json
 {
-  "appVersion": "1.3.0",
+  "appVersion": "1.3.1",
   "schemaVersion": 5,
   "exportedAt": "2026-11-24T04:30:00.000Z",
   "state": {

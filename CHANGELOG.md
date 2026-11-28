@@ -2,6 +2,17 @@
 
 Semua perubahan Signifikan dicatat di sini. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/); proyek ini belum memakai Semantic Versioning secara ketat.
 
+## [1.3.1] — 2026-11-28
+
+**Perbaikan pasca-rilis v1.3.0 dan skeleton loading**
+
+- Audit pasca-rilis: normalisasi data/migrasi lebih aman, kuota pemulihan dan rencana catch-up diperbaiki, judul aktivitas di-escape sebelum `innerHTML`, modal konfirmasi perubahan belum disimpan, target toast sentuh ≥ 44 px, fallback notifikasi, retry arsip IndexedDB, serta perbaikan skip link/fokus.
+- Service worker: pre-cache atomik yang dibatasi scope aplikasi, fetch tidak menyusup ke PWA lain pada origin bersama, dan alur “Versi baru tersedia” tetap aman.
+- Skeleton loading muncul saat boot, perpindahan halaman, dan ekspor/impor JSON. Overlay bersifat dekoratif (`pointer-events: none`) dan animasinya mengikuti `prefers-reduced-motion`.
+- `Utils.APP_VERSION` = `1.3.1`, `package.json` = `1.3.1`, `sw.js` `CACHE` = `rutin-buah-v37`; cache lama dibersihkan saat aktivasi agar pengguna PWA menerima aset terbaru.
+- Belum termasuk S3/MAD: kontrak langkah tersebut tidak tersedia di repo dan prasyarat data ≥ 3 minggu belum terpenuhi.
+- Tes: 66 unit dan 58 E2E (12 E2E audit-fixes + 4 E2E skeleton) hijau di lokal dan CI.
+
 ## [1.3.0] — 2026-11-24
 
 **S9 + S1 + S2 — penyimpanan skalabel, rencana pemulihan yang dijadwalkan, insight berbasis pola**

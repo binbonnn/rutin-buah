@@ -2,7 +2,7 @@
 
 Aplikasi web **mobile-first** dan **PWA** untuk mengelola rutinitas mingguan, progres skripsi, konsumsi buah, stok, dan anggaran belanja. Seluruh data tersimpan lokal di browser (`localStorage`) sehingga tetap ada setelah halaman ditutup.
 
-**Versi aplikasi:** 1.3.0 · **Skema data:** 5
+**Versi aplikasi:** 1.3.1 · **Skema data:** 5
 
 ## Menjalankan
 

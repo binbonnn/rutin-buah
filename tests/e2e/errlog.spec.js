@@ -20,7 +20,8 @@ test('error dan unhandledrejection tercatat, disensor, bisa diunduh, dan dihapus
   expect(entries[0].src).not.toContain('token');
   expect(entries[1].kind).toBe('rejection');
   expect(entries[1].msg).not.toContain('Catatan Pribadi');
-  expect(entries.every((e) => e.stack.length <= 500 && e.ver === '1.3.0')).toBe(true);
+  const appVersion = await page.evaluate(() => Utils.APP_VERSION);
+  expect(entries.every((e) => e.stack.length <= 500 && e.ver === appVersion)).toBe(true);
 
   await goRoute(page, 'pengaturan');
   const downloadPromise = page.waitForEvent('download');
